@@ -12,11 +12,6 @@
     "test": {
       "dependsOn": ["^typecheck"]
     },
-    "synth": {
-      "dependsOn": ["web#build"],
-      "outputs": ["cdk.out/**"],
-      "cache": false
-    },
     "dev": {
       "cache": false,
       "persistent": true

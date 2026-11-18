@@ -4,8 +4,15 @@ coverage
 .env
 .env.*
 !.env.example
-cdk.out
 *.tsbuildinfo
 .DS_Store
 .idea
 .turbo
+
+# Terraform
+infra/.terraform/
+infra/.build/
+*.tfstate
+*.tfstate.*
+infra/terraform.tfvars
+crash.log

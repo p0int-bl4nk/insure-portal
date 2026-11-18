@@ -8,7 +8,8 @@ apps/
   api/        Lambda handler (Turnstile → bot checks → Zod → Google Sheets) + local dev server
 packages/
   shared/     Zod schema, option lists and types used by web and api
-  infra/      AWS CDK stack (CloudFront + S3, HTTP API, Lambda, Secrets Manager, alarms)
+infra/        Terraform (CloudFront + S3, HTTP API, Lambda, Secrets Manager, alarms)
+scripts/      deploy-web.sh: upload the built site and invalidate CloudFront
 ```
 
 Tooling: pnpm workspaces with a catalog for shared versions, Turborepo, Ultracite (oxlint + oxfmt), Vitest.
@@ -31,31 +32,38 @@ No AWS credentials are needed locally.
 
 ## Scripts
 
-| Command          | What it does                                      |
-| ---------------- | ------------------------------------------------- |
-| `pnpm dev`       | Web and API dev servers                           |
-| `pnpm build`     | Production build of the web app                   |
-| `pnpm typecheck` | TypeScript across all packages                    |
-| `pnpm test`      | Vitest across all packages                        |
-| `pnpm check`     | Ultracite lint + format check                     |
-| `pnpm fix`       | Ultracite autofix + format                        |
-| `pnpm synth`     | Build web, then `cdk synth` (no AWS calls needed) |
+| Command | What it does |
+| --- | --- |
+| `pnpm dev` | Web and API dev servers |
+| `pnpm build` | Production build of the web app |
+| `pnpm typecheck` | TypeScript across all packages |
+| `pnpm test` | Vitest across all packages |
+| `pnpm check` | Ultracite lint + format check |
+| `pnpm fix` | Ultracite autofix + format |
+| `pnpm deploy:web` | Build the web app, upload it to S3, invalidate CloudFront |
 
 ## Deploying (account not decided yet)
 
-1. Set `spreadsheetId` (and optionally `domainName` + a us-east-1 `certificateArn`) in `packages/infra/cdk.json`.
-2. `pnpm --filter @insure/infra exec cdk bootstrap` (once per account/region, `me-central-1`).
-3. `pnpm build && pnpm --filter @insure/infra deploy`
-4. Put the real secret value into the `AppSecretArn` output:
+Needs Terraform ≥ 1.17 and the AWS CLI, signed in to the target account.
+
+1. `cp infra/terraform.tfvars.example infra/terraform.tfvars` and set `spreadsheet_id` (optionally `domain_name` + a us-east-1 `certificate_arn`).
+2. Build the Lambda bundle: `pnpm --filter @insure/api build` (Terraform zips `apps/api/dist`).
+3. `terraform -chdir=infra init`, then `terraform -chdir=infra apply`. Everything is in `me-central-1` except CloudFront, which is global.
+4. Put the real secret value into the `app_secret_arn` output, outside Terraform so it never lands in state:
+   ```sh
+   aws secretsmanager put-secret-value --secret-id "$(terraform -chdir=infra output -raw app_secret_arn)" \
+     --secret-string file://secret.json
+   ```
+   where `secret.json` is
    ```json
    {
      "googleServiceAccount": { "client_email": "…", "private_key": "…" },
      "turnstileSecretKey": "…"
    }
    ```
-5. Set the production Turnstile site key in `apps/web/.env` before building.
+5. Set the production Turnstile site key in `apps/web/.env`, then `pnpm deploy:web`.
 
-Lambda reserved concurrency defaults to 5 (`reservedConcurrency` context). Accounts with a low concurrency quota may need to raise the quota or lower this value.
+Terraform state is local until the account is chosen; `infra/versions.tf` has the S3 backend block to switch to. Lambda reserved concurrency defaults to 5 (`reserved_concurrency`). Accounts with a low concurrency quota may need to raise the quota or lower this value.
 
 ## Sheet layout
 

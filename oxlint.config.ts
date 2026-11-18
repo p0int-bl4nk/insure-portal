@@ -12,12 +12,8 @@ export default defineConfig({
     // react-hook-form wires controls with `onChange={field.onChange}`; renaming every
     // one to handle* adds wrappers with no benefit.
     "react/jsx-handler-names": "off",
+    // Option sets are const objects with a same-named type (`Relation` value +
+    // `Relation` type). TypeScript already rejects genuine redeclarations.
+    "no-redeclare": "off",
   },
-  overrides: [
-    {
-      // CDK constructs register themselves with their scope; `new X(this, ...)` is the API.
-      files: ["packages/infra/**"],
-      rules: { "no-new": "off" },
-    },
-  ],
 });

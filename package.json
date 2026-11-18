@@ -7,9 +7,9 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "synth": "turbo run synth",
     "check": "ultracite check",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "deploy:web": "bash scripts/deploy-web.sh"
   },
   "devDependencies": {
     "oxfmt": "0.79.0",
