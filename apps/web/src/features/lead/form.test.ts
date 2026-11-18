@@ -1,96 +1,132 @@
+import { Condition, Gender, MaritalStatus } from "@insure/shared";
 import { describe, expect, it } from "vitest";
 
 import {
   formatMobileInput,
-  insertIndex,
+  formMembers,
   memberEligibility,
+  memberField,
   memberLabel,
   newMember,
   pruneHealthAnswers,
   summarizeConditions,
 } from "./form";
-import type { MemberFormValues } from "./form";
+import type { MembersFormValues } from "./form";
 
-const member = (patch: Partial<MemberFormValues>): MemberFormValues => ({
-  relation: "self",
-  age: 34,
-  gender: "male",
-  conditions: [],
+const members = (
+  patch: Partial<MembersFormValues> = {}
+): MembersFormValues => ({
+  self: { age: 34, conditions: [], smoker: false },
+  children: [],
   ...patch,
 });
 
-describe(insertIndex, () => {
-  it("keeps members in relation order", () => {
-    const members = [
-      member({ relation: "self" }),
-      member({ relation: "child" }),
-      member({ relation: "mother" }),
-    ];
-    expect(insertIndex(members, "spouse")).toBe(1);
-    expect(insertIndex(members, "child")).toBe(2);
-    expect(insertIndex(members, "father")).toBe(2);
+describe("blank members", () => {
+  it("defaults a spouse to the opposite gender", () => {
+    expect(newMember.spouse(Gender.Male).gender).toBe(Gender.Female);
+    expect(newMember.spouse(Gender.Female).gender).toBe(Gender.Male);
+    expect(newMember.child()).toStrictEqual({ age: "", conditions: [] });
   });
 });
 
-describe(newMember, () => {
-  it("presets parent genders and the opposite gender for a spouse", () => {
-    expect(newMember("father").gender).toBe("male");
-    expect(newMember("mother").gender).toBe("female");
-    expect(newMember("spouse", "male").gender).toBe("female");
-    expect(newMember("child").gender).toBeUndefined();
-  });
-});
-
-describe(memberLabel, () => {
-  it("numbers children in order", () => {
-    const members = [
-      member({ relation: "self" }),
-      member({ relation: "child" }),
-      member({ relation: "child" }),
-    ];
-    expect(memberLabel(members, 0)).toBe("Self");
-    expect(memberLabel(members, 2)).toBe("Child 2");
+describe(formMembers, () => {
+  it("lists members in order with labels and form paths", () => {
+    const entries = formMembers(
+      members({
+        mother: { age: 60, conditions: [], smoker: false },
+        children: [
+          { age: 4, gender: Gender.Male },
+          { age: 2, gender: Gender.Female },
+        ],
+      }),
+      Gender.Male
+    );
+    expect(entries.map((entry) => memberLabel(entry))).toStrictEqual([
+      "Self",
+      "Child 1",
+      "Child 2",
+      "Mother",
+    ]);
+    expect(
+      entries.map((entry) => memberField(entry.path, "age"))
+    ).toStrictEqual([
+      "members.self.age",
+      "members.children.0.age",
+      "members.children.1.age",
+      "members.mother.age",
+    ]);
+    expect(entries.at(-1)?.gender).toBe(Gender.Female);
   });
 });
 
 describe(memberEligibility, () => {
-  it("asks smoker for adults and pregnancy for a married female self", () => {
+  it("asks pregnancy of a married female proposer only", () => {
+    const [self] = formMembers(
+      members({ self: { age: "30", conditions: [], smoker: false } }),
+      Gender.Female
+    );
     expect(
-      memberEligibility(member({ gender: "female", age: "30" }), "married")
+      self && memberEligibility(self, MaritalStatus.Married)
     ).toStrictEqual({ asksSmoker: true, asksPregnancy: true });
+    expect(self && memberEligibility(self, MaritalStatus.Single)).toStrictEqual(
+      { asksSmoker: true, asksPregnancy: false }
+    );
+  });
+
+  it("asks smoker of children only from 18", () => {
+    const [, young, adult] = formMembers(
+      members({
+        children: [
+          { age: 4, gender: Gender.Male },
+          { age: 19, gender: Gender.Male },
+        ],
+      }),
+      Gender.Male
+    );
     expect(
-      memberEligibility(member({ gender: "female", age: 30 }), "single")
-    ).toStrictEqual({ asksSmoker: true, asksPregnancy: false });
+      young && memberEligibility(young, MaritalStatus.Married)
+    ).toStrictEqual({
+      asksSmoker: false,
+      asksPregnancy: false,
+    });
     expect(
-      memberEligibility(member({ relation: "child", age: 4 }), "married")
-    ).toStrictEqual({ asksSmoker: false, asksPregnancy: false });
+      adult && memberEligibility(adult, MaritalStatus.Married)
+    ).toStrictEqual({
+      asksSmoker: true,
+      asksPregnancy: false,
+    });
   });
 });
 
 describe(pruneHealthAnswers, () => {
   it("drops answers to questions that no longer apply", () => {
-    const [child] = pruneHealthAnswers(
-      [member({ relation: "child", age: 4, smoker: false, pregnant: false })],
-      "married"
+    const pruned = pruneHealthAnswers(
+      members({
+        self: { age: 34, conditions: [], smoker: false, pregnant: false },
+        children: [{ age: 4, gender: Gender.Male, smoker: false }],
+      }),
+      Gender.Male,
+      MaritalStatus.Married
     );
-    expect(child).not.toHaveProperty("smoker");
-    expect(child).not.toHaveProperty("pregnant");
+    expect(pruned.self).not.toHaveProperty("pregnant");
+    expect(pruned.children?.[0]).not.toHaveProperty("smoker");
+    expect(pruned.self).toHaveProperty("smoker", false);
   });
 });
 
 describe(summarizeConditions, () => {
   it("shows two names, then a count of the rest", () => {
     expect(summarizeConditions([])).toBe("None");
-    expect(summarizeConditions(["diabetes", "thyroid"])).toBe(
+    expect(summarizeConditions([Condition.Diabetes, Condition.Thyroid])).toBe(
       "Diabetes, Thyroid"
     );
     expect(
       summarizeConditions([
-        "diabetes",
-        "respiratory",
-        "kidney",
-        "thyroid",
-        "other",
+        Condition.Diabetes,
+        Condition.Respiratory,
+        Condition.Kidney,
+        Condition.Thyroid,
+        Condition.Other,
       ])
     ).toBe("Diabetes, Asthma / respiratory and 3 more");
   });

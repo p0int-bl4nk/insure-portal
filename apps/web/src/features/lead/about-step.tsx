@@ -1,15 +1,14 @@
 import {
   COUNTRIES,
+  Emirate,
   EMIRATE_LABELS,
-  EMIRATES,
+  Gender,
   GENDER_LABELS,
-  GENDERS,
+  MaritalStatus,
   MARITAL_STATUS_LABELS,
-  MARITAL_STATUSES,
+  SalaryBand,
   SALARY_BAND_LABELS,
-  SALARY_BANDS,
 } from "@insure/shared";
-import type { CountryCode } from "@insure/shared";
 import { Controller, useFormContext } from "react-hook-form";
 
 import {
@@ -41,10 +40,11 @@ import { ChoiceGroup } from "./choice-group";
 import { formatMobileInput } from "./form";
 import type { LeadFormValues } from "./form";
 
+/** Choice options from an option object, in declaration order. */
 const options = <T extends string>(
-  values: readonly T[],
+  values: Record<string, T>,
   labels: Record<T, string>
-) => values.map((value) => ({ value, label: labels[value] }));
+) => Object.values(values).map((value) => ({ value, label: labels[value] }));
 
 type Country = (typeof COUNTRIES)[number];
 
@@ -132,9 +132,7 @@ export const AboutStep = () => {
               <Combobox<Country>
                 items={COUNTRIES}
                 value={COUNTRIES.find((c) => c.code === field.value) ?? null}
-                onValueChange={(country) =>
-                  field.onChange(country?.code as CountryCode)
-                }
+                onValueChange={(country) => field.onChange(country?.code)}
                 itemToStringLabel={(country) => country.name}
                 isItemEqualToValue={(a, b) => a.code === b.code}
               >
@@ -173,7 +171,7 @@ export const AboutStep = () => {
             </FieldLegend>
             <ChoiceGroup
               aria-labelledby="emirate-legend"
-              options={options(EMIRATES, EMIRATE_LABELS)}
+              options={options(Emirate, EMIRATE_LABELS)}
               value={field.value}
               onChange={field.onChange}
               invalid={fieldState.invalid}
@@ -193,7 +191,7 @@ export const AboutStep = () => {
             </FieldLegend>
             <ChoiceGroup
               aria-labelledby="salary-legend"
-              options={options(SALARY_BANDS, SALARY_BAND_LABELS)}
+              options={options(SalaryBand, SALARY_BAND_LABELS)}
               value={field.value}
               onChange={field.onChange}
               invalid={fieldState.invalid}
@@ -217,7 +215,7 @@ export const AboutStep = () => {
               </FieldLegend>
               <ChoiceGroup
                 aria-labelledby="gender-legend"
-                options={options(GENDERS, GENDER_LABELS)}
+                options={options(Gender, GENDER_LABELS)}
                 value={field.value}
                 onChange={field.onChange}
                 invalid={fieldState.invalid}
@@ -239,7 +237,7 @@ export const AboutStep = () => {
               </FieldLegend>
               <ChoiceGroup
                 aria-labelledby="marital-legend"
-                options={options(MARITAL_STATUSES, MARITAL_STATUS_LABELS)}
+                options={options(MaritalStatus, MARITAL_STATUS_LABELS)}
                 value={field.value}
                 onChange={field.onChange}
                 invalid={fieldState.invalid}

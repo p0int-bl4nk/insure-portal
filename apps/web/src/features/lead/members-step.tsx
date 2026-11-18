@@ -1,10 +1,11 @@
 import {
+  Gender,
   GENDER_LABELS,
-  GENDERS,
+  MaritalStatus,
   MARRIED_ONLY_RELATIONS,
   MAX_CHILDREN,
+  Relation,
 } from "@insure/shared";
-import type { Relation } from "@insure/shared";
 import { CheckIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
 import { cn } from "cn";
 import {
@@ -30,18 +31,24 @@ import { Separator } from "@/components/ui/separator";
 import { Toggle } from "@/components/ui/toggle";
 
 import { ChoiceGroup } from "./choice-group";
-import { insertIndex, memberLabel, newMember } from "./form";
+import {
+  formMembers,
+  genderField,
+  memberField,
+  memberLabel,
+  newMember,
+} from "./form";
 import type { LeadFormValues } from "./form";
 
-const TILES: { relation: Relation; label: string }[] = [
-  { relation: "self", label: "Self" },
-  { relation: "spouse", label: "Spouse" },
-  { relation: "child", label: "Children" },
-  { relation: "father", label: "Father" },
-  { relation: "mother", label: "Mother" },
-];
+const TILES = [
+  { relation: Relation.Self, label: "Self" },
+  { relation: Relation.Spouse, label: "Spouse" },
+  { relation: Relation.Child, label: "Children" },
+  { relation: Relation.Father, label: "Father" },
+  { relation: Relation.Mother, label: "Mother" },
+] as const;
 
-const GENDER_SHORT = GENDERS.map((value) => ({
+const GENDER_SHORT = Object.values(Gender).map((value) => ({
   value,
   label: GENDER_LABELS[value].charAt(0),
 }));
@@ -49,51 +56,73 @@ const GENDER_SHORT = GENDERS.map((value) => ({
 export const MembersStep = () => {
   const {
     control,
-    register,
-    getValues,
+    setValue,
     formState: { errors },
   } = useFormContext<LeadFormValues>();
-  const { fields, insert, remove } = useFieldArray({
-    control,
-    name: "members",
-  });
-  const members = useWatch({ control, name: "members" }) ?? [];
+
+  const children = useFieldArray({ control, name: "members.children" });
+
+  const members = useWatch({ control, name: "members" });
   const proposerGender = useWatch({ control, name: "proposer.gender" });
-  const isMarried =
-    useWatch({ control, name: "proposer.maritalStatus" }) === "married";
+  const maritalStatus = useWatch({ control, name: "proposer.maritalStatus" });
+  const isMarried = maritalStatus === MaritalStatus.Married;
 
-  const countOf = (relation: Relation) =>
-    members.filter((m) => m.relation === relation).length;
-  const childCount = countOf("child");
+  const entries = formMembers(members, proposerGender);
+  const childCount = members?.children?.length ?? 0;
 
-  const add = (relation: Relation) =>
-    insert(
-      insertIndex(getValues("members"), relation),
-      newMember(relation, proposerGender)
-    );
+  const isIncluded = (relation: Relation) =>
+    relation === Relation.Child
+      ? childCount > 0
+      : entries.some((entry) => entry.relation === relation);
+
+  const addChild = () => children.append(newMember.child());
 
   const toggle = (relation: Relation, on: boolean) => {
-    if (on) {
-      add(relation);
-      return;
+    switch (relation) {
+      case Relation.Child: {
+        if (on) {
+          addChild();
+        } else {
+          children.remove();
+        }
+        return;
+      }
+
+      case Relation.Spouse: {
+        setValue(
+          "members.spouse",
+          on ? newMember.spouse(proposerGender) : undefined
+        );
+        return;
+      }
+
+      case Relation.Father: {
+        setValue("members.father", on ? newMember.father() : undefined);
+        return;
+      }
+
+      case Relation.Mother: {
+        setValue("members.mother", on ? newMember.mother() : undefined);
+        break;
+      }
+
+      // Self is always included and can't be toggled.
+      default:
     }
-    const indexes = getValues("members").flatMap((m, i) =>
-      m.relation === relation ? [i] : []
-    );
-    remove(indexes);
   };
 
-  const rootError =
-    errors.members?.root ??
-    (errors.members?.message ? errors.members : undefined);
+  const membersError =
+    errors.members?.message ?? errors.members?.children?.message;
 
   return (
     <FieldGroup>
-      <FieldSet data-invalid={!!rootError || undefined}>
+      <FieldSet data-invalid={!!membersError || undefined}>
         <FieldLegend variant="label">Members</FieldLegend>
+
         <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
           {TILES.map(({ relation, label }) => {
-            const pressed = countOf(relation) > 0;
+            const pressed = isIncluded(relation);
+
             return (
               <Toggle
                 key={relation}
@@ -101,14 +130,14 @@ export const MembersStep = () => {
                 size="touch"
                 pressed={pressed}
                 disabled={
-                  relation === "self" ||
+                  relation === Relation.Self ||
                   (!isMarried && MARRIED_ONLY_RELATIONS.includes(relation))
                 }
                 onPressedChange={(on) => toggle(relation, on)}
                 className={cn(
                   "h-11 justify-start gap-2",
                   // Self is always included: keep it looking selected, not disabled.
-                  relation === "self" && "disabled:opacity-100"
+                  relation === Relation.Self && "disabled:opacity-100"
                 )}
               >
                 {pressed ? (
@@ -116,21 +145,25 @@ export const MembersStep = () => {
                 ) : (
                   <PlusIcon data-icon="inline-start" />
                 )}
+
                 <span className="flex-1 text-left">{label}</span>
-                {relation === "child" && childCount > 0 && (
+
+                {relation === Relation.Child && childCount > 0 && (
                   <span className="text-[11px] opacity-70">×{childCount}</span>
                 )}
               </Toggle>
             );
           })}
         </div>
+
         {!isMarried && (
           <FieldDescription>
             Spouse and children can be added when your marital status is
             Married.
           </FieldDescription>
         )}
-        <FieldError errors={[rootError]} />
+
+        {membersError && <FieldError>{membersError}</FieldError>}
       </FieldSet>
 
       <Separator />
@@ -141,90 +174,114 @@ export const MembersStep = () => {
         </h2>
 
         <div className="grid gap-3 md:grid-cols-2">
-          {fields.map((field, index) => {
-            const member = members[index];
-            const memberErrors = errors.members?.[index];
-            const label = memberLabel(members, index);
-            const isSelf = member?.relation === "self";
-            const ageId = `member-${field.id}-age`;
+          {entries.map((entry) => {
+            const label = memberLabel(entry);
+            const childIndex =
+              entry.path[0] === "children" ? entry.path[1] : undefined;
+            const key =
+              childIndex === undefined
+                ? entry.relation
+                : (children.fields[childIndex]?.id ?? label);
+            const idBase = `member-${key}`;
+            const gender = genderField(entry.path);
+
             return (
-              <FieldSet
-                key={field.id}
-                className="border-border gap-3 border p-3.5"
-              >
+              <FieldSet key={key} className="border-border gap-3 border p-3.5">
                 <div className="flex min-h-8 items-center justify-between">
                   <FieldLegend variant="label" className="mb-0 font-semibold">
                     {label}
                   </FieldLegend>
-                  {isSelf && <Badge variant="secondary">FROM STEP 1</Badge>}
-                  {member?.relation === "child" && (
+
+                  {entry.relation === Relation.Self && (
+                    <Badge variant="secondary">FROM STEP 1</Badge>
+                  )}
+
+                  {childIndex !== undefined && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
                       aria-label={`Remove ${label.toLowerCase()}`}
-                      onClick={() => remove(index)}
+                      onClick={() => children.remove(childIndex)}
                     >
                       <XIcon />
                     </Button>
                   )}
                 </div>
+
                 <div className="grid grid-cols-2 gap-3">
-                  <Field
-                    data-invalid={!!memberErrors?.age || undefined}
-                    className="min-w-0"
-                  >
-                    <FieldLabel
-                      htmlFor={ageId}
-                      className="text-muted-foreground"
-                    >
-                      Age
-                    </FieldLabel>
-                    <Input
-                      id={ageId}
-                      inputMode="numeric"
-                      maxLength={2}
-                      className="h-10"
-                      aria-invalid={!!memberErrors?.age || undefined}
-                      {...register(`members.${index}.age`)}
-                    />
-                    <FieldError errors={[memberErrors?.age]} />
-                  </Field>
-                  {isSelf ? (
-                    <Field className="min-w-0">
-                      <FieldLabel className="text-muted-foreground">
-                        Gender
-                      </FieldLabel>
-                      <div className="border-input bg-muted/50 text-muted-foreground flex h-10 items-center border px-2.5 text-xs">
-                        {proposerGender ? GENDER_LABELS[proposerGender] : "—"}
-                      </div>
-                    </Field>
-                  ) : (
+                  <Controller
+                    control={control}
+                    name={memberField(entry.path, "age")}
+                    render={({ field, fieldState }) => (
+                      <Field
+                        data-invalid={fieldState.invalid || undefined}
+                        className="min-w-0"
+                      >
+                        <FieldLabel
+                          htmlFor={`${idBase}-age`}
+                          className="text-muted-foreground"
+                        >
+                          Age
+                        </FieldLabel>
+
+                        <Input
+                          id={`${idBase}-age`}
+                          inputMode="numeric"
+                          maxLength={2}
+                          className="h-10"
+                          aria-invalid={fieldState.invalid || undefined}
+                          name={field.name}
+                          ref={field.ref}
+                          value={String(field.value ?? "")}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                        />
+
+                        <FieldError errors={[fieldState.error]} />
+                      </Field>
+                    )}
+                  />
+
+                  {gender ? (
                     <Controller
                       control={control}
-                      name={`members.${index}.gender`}
-                      render={({ field: gender, fieldState }) => (
+                      name={gender}
+                      render={({ field, fieldState }) => (
                         <Field
                           data-invalid={fieldState.invalid || undefined}
                           className="min-w-0"
                         >
                           <FieldLabel
-                            id={`${ageId}-gender`}
+                            id={`${idBase}-gender`}
                             className="text-muted-foreground"
                           >
                             Gender
                           </FieldLabel>
+
                           <ChoiceGroup
-                            aria-labelledby={`${ageId}-gender`}
+                            aria-labelledby={`${idBase}-gender`}
                             options={GENDER_SHORT}
-                            value={gender.value}
-                            onChange={gender.onChange}
+                            value={field.value}
+                            onChange={field.onChange}
                             invalid={fieldState.invalid}
                           />
+
                           <FieldError errors={[fieldState.error]} />
                         </Field>
                       )}
                     />
+                  ) : (
+                    // Not asked: self (from step 1), father and mother.
+                    <Field className="min-w-0">
+                      <FieldLabel className="text-muted-foreground">
+                        Gender
+                      </FieldLabel>
+
+                      <div className="border-input bg-muted/50 text-muted-foreground flex h-10 items-center border px-2.5 text-xs">
+                        {entry.gender ? GENDER_LABELS[entry.gender] : "—"}
+                      </div>
+                    </Field>
                   )}
                 </div>
               </FieldSet>
@@ -238,7 +295,7 @@ export const MembersStep = () => {
             variant="outline"
             size="touch"
             className="border-dashed md:self-start"
-            onClick={() => add("child")}
+            onClick={addChild}
           >
             <PlusIcon data-icon="inline-start" />
             Add another child

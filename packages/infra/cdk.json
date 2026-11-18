@@ -1,9 +1,0 @@
-{
-  "app": "tsx bin/app.ts",
-  "context": {
-    "spreadsheetId": "",
-    "domainName": "",
-    "certificateArn": "",
-    "reservedConcurrency": 5
-  }
-}

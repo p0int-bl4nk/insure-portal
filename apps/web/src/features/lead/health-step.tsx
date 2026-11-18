@@ -1,5 +1,4 @@
-import { CONDITION_LABELS, CONDITIONS } from "@insure/shared";
-import type { Condition } from "@insure/shared";
+import { Condition, CONDITION_LABELS } from "@insure/shared";
 import { CaretDownIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
@@ -16,8 +15,23 @@ import {
 import { Separator } from "@/components/ui/separator";
 
 import { YesNoChoice } from "./choice-group";
-import { memberEligibility, memberLabel, summarizeConditions } from "./form";
+import {
+  formMembers,
+  memberEligibility,
+  memberField,
+  memberLabel,
+  pregnancyField,
+  summarizeConditions,
+} from "./form";
 import type { LeadFormValues } from "./form";
+
+interface LifestyleQuestion {
+  who: string;
+  text: string;
+  name:
+    | ReturnType<typeof memberField<"smoker">>
+    | NonNullable<ReturnType<typeof pregnancyField>>;
+}
 
 export const HealthStep = () => {
   const {
@@ -26,40 +40,43 @@ export const HealthStep = () => {
     getValues,
     formState: { errors },
   } = useFormContext<LeadFormValues>();
-  const members = useWatch({ control, name: "members" }) ?? [];
+
+  const members = useWatch({ control, name: "members" });
   const hasPed = useWatch({ control, name: "hasPed" });
   const maritalStatus = useWatch({ control, name: "proposer.maritalStatus" });
+  const proposerGender = useWatch({ control, name: "proposer.gender" });
+
   const [open, setOpen] = useState(0);
 
-  const lifestyle = members.flatMap((member, index) => {
-    const { asksSmoker, asksPregnancy } = memberEligibility(
-      member,
-      maritalStatus
-    );
-    const label = memberLabel(members, index);
+  const entries = formMembers(members, proposerGender);
+
+  // Yes/No follow-ups, only for the members they apply to.
+  const lifestyle = entries.flatMap<LifestyleQuestion>((entry) => {
+    const asks = memberEligibility(entry, maritalStatus);
+    const who = memberLabel(entry);
+    const pregnant = pregnancyField(entry.path);
+
     return [
-      ...(asksSmoker
+      ...(asks.asksSmoker
         ? [
             {
-              key: `${index}-smoker`,
-              name: `members.${index}.smoker` as const,
-              who: label,
+              who,
               text: "smokes or uses tobacco",
+              name: memberField(entry.path, "smoker"),
             },
           ]
         : []),
-      ...(asksPregnancy
-        ? [
-            {
-              key: `${index}-pregnant`,
-              name: `members.${index}.pregnant` as const,
-              who: label,
-              text: "is currently pregnant",
-            },
-          ]
+      ...(asks.asksPregnancy && pregnant
+        ? [{ who, text: "is currently pregnant", name: pregnant }]
         : []),
     ];
   });
+
+  const clearConditions = () => {
+    for (const { path } of formMembers(getValues("members"), proposerGender)) {
+      setValue(memberField(path, "conditions"), [], { shouldDirty: true });
+    }
+  };
 
   return (
     <FieldGroup>
@@ -75,21 +92,19 @@ export const HealthStep = () => {
             >
               Does anyone to be insured have a pre-existing medical condition?
             </FieldLegend>
+
             <YesNoChoice
               aria-labelledby="ped-legend"
               value={field.value}
               onChange={(yes) => {
                 field.onChange(yes);
                 if (!yes) {
-                  for (const i of getValues("members").keys()) {
-                    setValue(`members.${i}.conditions`, [], {
-                      shouldDirty: true,
-                    });
-                  }
+                  clearConditions();
                 }
               }}
               invalid={fieldState.invalid}
             />
+
             <FieldError errors={[fieldState.error]} />
           </FieldSet>
         )}
@@ -100,15 +115,16 @@ export const HealthStep = () => {
           <h2 id="who-has" className="text-xs font-medium">
             Who has a condition?
           </h2>
-          {members.map((member, index) => {
-            const label = `${memberLabel(members, index)} · ${member.age}`;
-            const selected = member.conditions ?? [];
-            const summary = summarizeConditions(selected);
-            const panelId = `conditions-${index}`;
+
+          {entries.map((entry, index) => {
+            const label = `${memberLabel(entry)} · ${String(entry.member.age ?? "")}`;
+            const summary = summarizeConditions(entry.member.conditions ?? []);
+            const panelId = `conditions-${entry.path.join("-")}`;
             const expanded = open === index;
+
             return (
               <div
-                key={index}
+                key={panelId}
                 className={
                   expanded ? "border-primary border" : "border-border border"
                 }
@@ -128,19 +144,22 @@ export const HealthStep = () => {
                     />
                   </span>
                 </button>
+
                 {expanded && (
                   <Controller
                     control={control}
-                    name={`members.${index}.conditions`}
+                    name={memberField(entry.path, "conditions")}
                     render={({ field }) => {
-                      const value = (field.value ?? []) as Condition[];
+                      const value = field.value ?? [];
+
                       return (
                         <div
                           id={panelId}
                           className="grid grid-cols-2 gap-x-3 gap-y-2.5 px-3.5 pb-3.5 md:grid-cols-3"
                         >
-                          {CONDITIONS.map((condition) => {
+                          {Object.values(Condition).map((condition) => {
                             const id = `${panelId}-${condition}`;
+
                             return (
                               <Field
                                 key={condition}
@@ -181,6 +200,7 @@ export const HealthStep = () => {
       {lifestyle.length > 0 && (
         <>
           <Separator />
+
           <section
             className="flex flex-col gap-3.5"
             aria-labelledby="lifestyle"
@@ -188,31 +208,37 @@ export const HealthStep = () => {
             <h2 id="lifestyle" className="text-xs font-medium">
               Lifestyle
             </h2>
-            {lifestyle.map((q) => (
+
+            {lifestyle.map((question) => (
               <Controller
-                key={q.key}
+                key={question.name}
                 control={control}
-                name={q.name}
+                name={question.name}
                 render={({ field, fieldState }) => (
                   <Field
                     data-invalid={fieldState.invalid || undefined}
                     className="gap-1.5"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <FieldLabel id={`${q.key}-label`} className="font-normal">
+                      <FieldLabel
+                        id={`${question.name}-label`}
+                        className="font-normal"
+                      >
                         <span className="text-primary font-semibold">
-                          {q.who}
+                          {question.who}
                         </span>{" "}
-                        {q.text}
+                        {question.text}
                       </FieldLabel>
+
                       <YesNoChoice
-                        aria-labelledby={`${q.key}-label`}
+                        aria-labelledby={`${question.name}-label`}
                         value={field.value}
                         onChange={field.onChange}
                         invalid={fieldState.invalid}
                         className="w-28 shrink-0"
                       />
                     </div>
+
                     <FieldError errors={[fieldState.error]} />
                   </Field>
                 )}
@@ -242,6 +268,7 @@ export const HealthStep = () => {
               aria-invalid={fieldState.invalid || undefined}
               className="mt-0.5"
             />
+
             <div className="flex flex-col gap-1.5">
               <FieldLabel
                 htmlFor="consent"
@@ -252,18 +279,23 @@ export const HealthStep = () => {
                 information to get insurance quotes, and to be contacted by
                 phone, WhatsApp or email.
               </FieldLabel>
+
               <a
                 href="#privacy"
                 className="text-[11px] underline underline-offset-2"
               >
                 Privacy notice
               </a>
+
               <FieldError errors={[fieldState.error]} />
             </div>
           </Field>
         )}
       />
-      {errors.members?.root && <FieldError errors={[errors.members.root]} />}
+
+      {errors.members?.message && (
+        <FieldError>{errors.members.message}</FieldError>
+      )}
     </FieldGroup>
   );
 };

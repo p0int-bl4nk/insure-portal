@@ -1,28 +1,23 @@
-import type { Lead, SubmitResponse } from "@insure/shared";
+import { submitResponseSchema } from "@insure/shared";
+import type { SubmitResponse, Submission } from "@insure/shared";
 
-export interface SubmitPayload {
-  lead: Lead;
-  turnstileToken: string;
-  website: string;
-  startedAt: number;
-}
+const UNAVAILABLE: SubmitResponse = { ok: false, error: "unavailable" };
 
-/** POSTs the lead. Never throws: network and unexpected responses map to "unavailable". */
+/** POSTs the lead. Never throws: network errors and unexpected responses map to "unavailable". */
 export const submitLead = async (
-  payload: SubmitPayload
+  submission: Submission
 ): Promise<SubmitResponse> => {
   try {
     const res = await fetch("/api/lead", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(submission),
     });
-    const data = (await res.json().catch(() => null)) as SubmitResponse | null;
-    if (data && typeof data.ok === "boolean") {
-      return data;
-    }
+
+    const parsed = submitResponseSchema.safeParse(await res.json());
+
+    return parsed.success ? parsed.data : UNAVAILABLE;
   } catch {
-    // Fall through to "unavailable".
+    return UNAVAILABLE;
   }
-  return { ok: false, error: "unavailable" };
 };

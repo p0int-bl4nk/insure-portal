@@ -1,7 +1,14 @@
+import {
+  Condition,
+  Emirate,
+  Gender,
+  MaritalStatus,
+  SalaryBand,
+} from "@insure/shared";
 import type { LeadInput } from "@insure/shared";
-import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { toApiEvent } from "./event.ts";
 import { createHandler } from "./handler.ts";
 import type { Deps } from "./handler.ts";
 import type { Logger } from "./log.ts";
@@ -15,28 +22,21 @@ const lead: LeadInput = {
     mobile: "0501234567",
     email: "rahul@example.com",
     nationality: "IN",
-    emirate: "dubai",
-    salaryBand: "above_4000",
-    gender: "male",
-    maritalStatus: "married",
+    emirate: Emirate.Dubai,
+    salaryBand: SalaryBand.Above4000,
+    gender: Gender.Male,
+    maritalStatus: MaritalStatus.Married,
   },
-  members: [
-    {
-      relation: "self",
-      age: 34,
-      gender: "male",
-      conditions: ["diabetes"],
-      smoker: false,
-    },
-    {
-      relation: "spouse",
+  members: {
+    self: { age: 34, conditions: [Condition.Diabetes], smoker: false },
+    spouse: {
       age: 31,
-      gender: "female",
+      gender: Gender.Female,
       conditions: [],
       smoker: false,
       pregnant: false,
     },
-  ],
+  },
   hasPed: true,
   consent: true,
 };
@@ -50,12 +50,13 @@ const submission = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const event = (body: unknown, method = "POST") =>
-  ({
+  toApiEvent({
+    method,
+    path: "/api/lead",
     body: typeof body === "string" ? body : JSON.stringify(body),
-    isBase64Encoded: false,
     headers: { "x-forwarded-for": "203.0.113.7, 10.0.0.1" },
-    requestContext: { http: { method, sourceIp: "10.0.0.1" } },
-  }) as unknown as APIGatewayProxyEventV2;
+    sourceIp: "10.0.0.1",
+  });
 
 const parse = (res: { statusCode?: number; body?: string }) => ({
   status: res.statusCode,

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { leadSchema, normalizeUaeMobile } from "./lead.ts";
+import { leadSchema, listMembers, normalizeUaeMobile } from "./lead.ts";
 import type { LeadInput } from "./lead.ts";
+import {
+  Condition,
+  Emirate,
+  Gender,
+  MaritalStatus,
+  Relation,
+  SalaryBand,
+} from "./options.ts";
 
 const validLead = (): LeadInput => ({
   proposer: {
@@ -9,57 +17,27 @@ const validLead = (): LeadInput => ({
     mobile: "50 123 4567",
     email: "",
     nationality: "IN",
-    emirate: "dubai",
-    salaryBand: "above_4000",
-    gender: "male",
-    maritalStatus: "married",
+    emirate: Emirate.Dubai,
+    salaryBand: SalaryBand.Above4000,
+    gender: Gender.Male,
+    maritalStatus: MaritalStatus.Married,
   },
-  members: [
-    {
-      relation: "self",
-      age: 34,
-      gender: "male",
-      conditions: ["diabetes"],
-      smoker: false,
-    },
-    {
-      relation: "spouse",
+  members: {
+    self: { age: 34, conditions: [Condition.Diabetes], smoker: false },
+    spouse: {
       age: 31,
-      gender: "female",
+      gender: Gender.Female,
       conditions: [],
       smoker: false,
       pregnant: false,
     },
-    { relation: "child", age: 4, gender: "male", conditions: [] },
-  ],
+    children: [{ age: 4, gender: Gender.Male, conditions: [] }],
+  },
   hasPed: true,
   consent: true,
 });
 
-type MemberInput = LeadInput["members"][number];
-
-/** Returns a copy of the lead with one member patched and optional fields removed. */
-const patchMember = (
-  input: LeadInput,
-  index: number,
-  patch: Partial<MemberInput>,
-  drop: ("smoker" | "pregnant")[] = []
-): LeadInput => ({
-  ...input,
-  members: input.members.map((member, i) => {
-    if (i !== index) {
-      return member;
-    }
-    const { smoker, pregnant, ...rest } = { ...member, ...patch };
-    return {
-      ...rest,
-      ...(drop.includes("smoker") ? {} : { smoker }),
-      ...(drop.includes("pregnant") ? {} : { pregnant }),
-    };
-  }),
-});
-
-const issuePaths = (input: LeadInput) => {
+const issuePaths = (input: unknown) => {
   const result = leadSchema.safeParse(input);
   return result.success ? [] : result.error.issues.map((i) => i.path.join("."));
 };
@@ -87,74 +65,97 @@ describe("lead schema", () => {
     const lead = leadSchema.parse(validLead());
     expect(lead.proposer.mobile).toBe("+971501234567");
     expect(lead.proposer.email).toBeUndefined();
+    expect(lead.members.children[0]?.age).toBe(4);
   });
 
-  it("requires exactly one self", () => {
+  it("enforces per-relation age limits from the shape", () => {
     const input = validLead();
-    input.members = input.members.filter((m) => m.relation !== "self");
-    expect(issuePaths(input)).toContain("members");
+    input.members.children = [{ age: 30, gender: Gender.Male }];
+    expect(issuePaths(input)).toContain("members.children.0.age");
+  });
+
+  it("treats an empty age as missing, not zero", () => {
+    const input = validLead();
+    input.members.children = [{ age: "", gender: Gender.Male }];
+    expect(issuePaths(input)).toContain("members.children.0.age");
+  });
+
+  it("caps children at four", () => {
+    const input = validLead();
+    input.members.children = Array.from({ length: 5 }, () => ({
+      age: 4,
+      gender: Gender.Female,
+    }));
+    expect(issuePaths(input)).toContain("members.children");
   });
 
   it("rejects a spouse or children when the proposer is single", () => {
     const withSpouse = validLead();
-    withSpouse.proposer.maritalStatus = "single";
-    withSpouse.members = withSpouse.members.filter(
-      (m) => m.relation !== "child"
-    );
+    withSpouse.proposer.maritalStatus = MaritalStatus.Single;
+    withSpouse.members.children = [];
     expect(issuePaths(withSpouse)).toContain("members");
 
-    const withChildOnly = validLead();
-    withChildOnly.proposer.maritalStatus = "single";
-    withChildOnly.members = withChildOnly.members.filter(
-      (m) => m.relation !== "spouse"
-    );
-    expect(issuePaths(withChildOnly)).toContain("members");
+    const withChild = validLead();
+    withChild.proposer.maritalStatus = MaritalStatus.Single;
+    delete withChild.members.spouse;
+    expect(issuePaths(withChild)).toContain("members");
   });
 
-  it("enforces per-relation age limits", () => {
-    const input = patchMember(validLead(), 2, { age: 30 });
-    expect(issuePaths(input)).toContain("members.2.age");
+  it("requires smoker for adult relations through the shape", () => {
+    const input = validLead();
+    input.members.self = { age: 34, conditions: [Condition.Diabetes] };
+    expect(issuePaths(input)).toContain("members.self.smoker");
   });
 
-  it("requires the smoker answer for adults only", () => {
-    const input = patchMember(patchMember(validLead(), 0, {}, ["smoker"]), 2, {
-      smoker: false,
-    });
-    expect(issuePaths(input)).toStrictEqual(
-      expect.arrayContaining(["members.0.smoker", "members.2.smoker"])
-    );
+  it("requires smoker for children aged 18 and over", () => {
+    const input = validLead();
+    input.members.children = [{ age: 20, gender: Gender.Male }];
+    expect(issuePaths(input)).toStrictEqual(["members.children.0.smoker"]);
   });
 
-  it("asks pregnancy only for eligible members", () => {
-    const input = patchMember(
-      patchMember(validLead(), 1, {}, ["pregnant"]),
-      0,
-      { pregnant: false }
-    );
-    expect(issuePaths(input)).toStrictEqual(
-      expect.arrayContaining(["members.1.pregnant", "members.0.pregnant"])
-    );
+  it("asks pregnancy of a female spouse but not a male proposer", () => {
+    const input = validLead();
+    if (input.members.spouse) {
+      delete input.members.spouse.pregnant;
+    }
+    expect(issuePaths(input)).toStrictEqual(["members.spouse.pregnant"]);
   });
 
   it("ties conditions to the PED gate", () => {
-    const yesWithoutConditions = patchMember(validLead(), 0, {
-      conditions: [],
-    });
+    const yesWithoutConditions = validLead();
+    yesWithoutConditions.members.self.conditions = [];
     expect(issuePaths(yesWithoutConditions)).toContain("hasPed");
 
     const noWithConditions = validLead();
     noWithConditions.hasPed = false;
-    expect(issuePaths(noWithConditions)).toContain("members.0.conditions");
-  });
-
-  it("treats an empty age as missing, not zero", () => {
-    const input = patchMember(validLead(), 2, { age: "" });
-    expect(issuePaths(input)).toContain("members.2.age");
+    expect(issuePaths(noWithConditions)).toContain("members.self.conditions");
   });
 
   it("requires consent", () => {
-    const input = validLead() as Record<string, unknown>;
-    input.consent = false;
-    expect(issuePaths(input as LeadInput)).toContain("consent");
+    expect(issuePaths({ ...validLead(), consent: false })).toContain("consent");
+  });
+
+  it("accepts blank health answers in the input type but reports them", () => {
+    const input = validLead();
+    input.members.father = { age: 66 };
+    expect(issuePaths(input)).toStrictEqual(["members.father.smoker"]);
+  });
+});
+
+describe(listMembers, () => {
+  it("lists members in order with resolved genders", () => {
+    const { members } = leadSchema.parse(validLead());
+    const entries = listMembers(members, Gender.Male);
+    expect(
+      entries.map(({ relation, gender, childNo }) => [
+        relation,
+        gender,
+        childNo,
+      ])
+    ).toStrictEqual([
+      [Relation.Self, Gender.Male, undefined],
+      [Relation.Spouse, Gender.Female, undefined],
+      [Relation.Child, Gender.Male, 1],
+    ]);
   });
 });

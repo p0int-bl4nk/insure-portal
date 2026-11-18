@@ -31,9 +31,10 @@ export const ChoiceGroup = <T extends string>({
     spacing={0}
     value={value ? [value] : []}
     onValueChange={(next) => {
-      const picked = next[0] as T | undefined;
+      // Selecting the active option again empties `next`; keep the current choice.
+      const picked = options.find((option) => option.value === next[0]);
       if (picked) {
-        onChange(picked);
+        onChange(picked.value);
       }
     }}
     className={cn("grid w-full", className)}

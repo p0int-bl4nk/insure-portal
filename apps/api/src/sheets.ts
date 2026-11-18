@@ -1,4 +1,5 @@
 import { JWT } from "google-auth-library";
+import { z } from "zod";
 
 import type { Cell } from "./rows.ts";
 import type { ServiceAccount } from "./secrets.ts";
@@ -6,23 +7,36 @@ import type { ServiceAccount } from "./secrets.ts";
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
-export interface SheetConfig {
-  spreadsheetId: string;
-  leadsTab: string;
-  membersTab: string;
-}
+const sheetEnvSchema = z
+  .object({
+    SPREADSHEET_ID: z.string().min(1, "SPREADSHEET_ID is not set"),
+    SHEET_LEADS_TAB: z.string().min(1).default("Leads"),
+    SHEET_MEMBERS_TAB: z.string().min(1).default("Members"),
+  })
+  .transform((env) => ({
+    spreadsheetId: env.SPREADSHEET_ID,
+    leadsTab: env.SHEET_LEADS_TAB,
+    membersTab: env.SHEET_MEMBERS_TAB,
+  }));
 
-export const sheetConfigFromEnv = (): SheetConfig => {
-  const spreadsheetId = process.env.SPREADSHEET_ID;
-  if (!spreadsheetId) {
-    throw new Error("SPREADSHEET_ID is not set");
-  }
-  return {
-    spreadsheetId,
-    leadsTab: process.env.SHEET_LEADS_TAB ?? "Leads",
-    membersTab: process.env.SHEET_MEMBERS_TAB ?? "Members",
-  };
-};
+export type SheetConfig = z.output<typeof sheetEnvSchema>;
+
+export const sheetConfigFromEnv = (): SheetConfig =>
+  sheetEnvSchema.parse(process.env);
+
+/** The part of the spreadsheet metadata response we read. */
+const tabsSchema = z
+  .object({
+    sheets: z.array(
+      z.object({
+        properties: z.object({ sheetId: z.number(), title: z.string() }),
+      })
+    ),
+  })
+  .transform(
+    ({ sheets }) =>
+      new Map(sheets.map((s) => [s.properties.title, s.properties.sheetId]))
+  );
 
 /** Literal cell values only: strings are never parsed as formulas. */
 const toRow = (cells: Cell[]) => ({
@@ -46,7 +60,11 @@ export class SheetsClient {
     this.#config = config;
   }
 
-  async #request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async #request<T extends z.ZodType>(
+    path: string,
+    response: T,
+    init: RequestInit = {}
+  ): Promise<z.output<T>> {
     const { token } = await this.#auth.getAccessToken();
     const res = await fetch(`${API}/${this.#config.spreadsheetId}${path}`, {
       ...init,
@@ -60,17 +78,15 @@ export class SheetsClient {
       // Google error bodies describe the request, not the row data, so the status is enough to log.
       throw new Error(`Sheets API ${res.status}`);
     }
-    return (await res.json()) as T;
+    return response.parse(await res.json());
   }
 
   /** Numeric tab IDs (needed by appendCells), looked up once per instance. */
   tabIds(): Promise<Map<string, number>> {
     if (!this.#tabIds) {
-      this.#tabIds = this.#request<{
-        sheets: { properties: { sheetId: number; title: string } }[];
-      }>("?fields=sheets.properties(sheetId,title)").then(
-        ({ sheets }) =>
-          new Map(sheets.map((s) => [s.properties.title, s.properties.sheetId]))
+      this.#tabIds = this.#request(
+        "?fields=sheets.properties(sheetId,title)",
+        tabsSchema
       );
       this.#tabIds.catch(() => {
         this.#tabIds = undefined;
@@ -98,7 +114,7 @@ export class SheetsClient {
       this.#tabId(this.#config.leadsTab),
       this.#tabId(this.#config.membersTab),
     ]);
-    await this.#request(":batchUpdate", {
+    await this.#request(":batchUpdate", z.unknown(), {
       method: "POST",
       body: JSON.stringify({
         requests: [
@@ -130,7 +146,7 @@ export class SheetsClient {
       (title) => !existing.has(title)
     );
     if (missing.length > 0) {
-      await this.#request(":batchUpdate", {
+      await this.#request(":batchUpdate", z.unknown(), {
         method: "POST",
         body: JSON.stringify({
           requests: missing.map((title) => ({
@@ -141,7 +157,7 @@ export class SheetsClient {
       this.#tabIds = undefined;
     }
     const ids = await this.tabIds();
-    await this.#request(":batchUpdate", {
+    await this.#request(":batchUpdate", z.unknown(), {
       method: "POST",
       body: JSON.stringify({
         requests: Object.entries(headers).flatMap(([title, row]) => [

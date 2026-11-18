@@ -2,63 +2,43 @@ import {
   GetSecretValueCommand,
   SecretsManagerClient,
 } from "@aws-sdk/client-secrets-manager";
+import { z } from "zod";
 
-export interface ServiceAccount {
-  client_email: string;
-  private_key: string;
-}
+import { jsonText } from "./json.ts";
 
-export interface AppSecrets {
-  googleServiceAccount: ServiceAccount;
-  turnstileSecretKey: string;
-}
+const serviceAccountSchema = z.object({
+  client_email: z.string().min(1),
+  private_key: z.string().min(1),
+});
 
-const parseServiceAccount = (raw: unknown): ServiceAccount => {
-  const sa = (
-    typeof raw === "string" ? JSON.parse(raw) : raw
-  ) as Partial<ServiceAccount>;
-  if (!(sa?.client_email && sa.private_key)) {
-    throw new Error(
-      "Service account JSON is missing client_email or private_key"
-    );
-  }
-  return { client_email: sa.client_email, private_key: sa.private_key };
-};
+/** Shape of the Secrets Manager secret (see README). */
+const appSecretsSchema = z.object({
+  googleServiceAccount: serviceAccountSchema,
+  turnstileSecretKey: z.string().min(1),
+});
 
-const loadFromSecretsManager = async (
-  secretId: string
-): Promise<AppSecrets> => {
+/** Local development: the same values from env vars. */
+const localEnvSchema = z
+  .object({
+    GOOGLE_SERVICE_ACCOUNT_JSON: jsonText.pipe(serviceAccountSchema),
+    TURNSTILE_SECRET_KEY: z.string().min(1),
+  })
+  .transform(
+    ({ GOOGLE_SERVICE_ACCOUNT_JSON, TURNSTILE_SECRET_KEY }): AppSecrets => ({
+      googleServiceAccount: GOOGLE_SERVICE_ACCOUNT_JSON,
+      turnstileSecretKey: TURNSTILE_SECRET_KEY,
+    })
+  );
+
+export type ServiceAccount = z.infer<typeof serviceAccountSchema>;
+export type AppSecrets = z.infer<typeof appSecretsSchema>;
+
+const loadFromSecretsManager = async (secretId: string) => {
   const client = new SecretsManagerClient({});
   const { SecretString } = await client.send(
     new GetSecretValueCommand({ SecretId: secretId })
   );
-  if (!SecretString) {
-    throw new Error("App secret is empty");
-  }
-  const parsed = JSON.parse(SecretString) as {
-    googleServiceAccount?: unknown;
-    turnstileSecretKey?: string;
-  };
-  if (!parsed.turnstileSecretKey) {
-    throw new Error("App secret is missing turnstileSecretKey");
-  }
-  return {
-    googleServiceAccount: parseServiceAccount(parsed.googleServiceAccount),
-    turnstileSecretKey: parsed.turnstileSecretKey,
-  };
-};
-
-const loadFromEnv = (): AppSecrets => {
-  const { GOOGLE_SERVICE_ACCOUNT_JSON, TURNSTILE_SECRET_KEY } = process.env;
-  if (!(GOOGLE_SERVICE_ACCOUNT_JSON && TURNSTILE_SECRET_KEY)) {
-    throw new Error(
-      "Set APP_SECRET_ID (AWS) or GOOGLE_SERVICE_ACCOUNT_JSON and TURNSTILE_SECRET_KEY (local)"
-    );
-  }
-  return {
-    googleServiceAccount: parseServiceAccount(GOOGLE_SERVICE_ACCOUNT_JSON),
-    turnstileSecretKey: TURNSTILE_SECRET_KEY,
-  };
+  return jsonText.pipe(appSecretsSchema).parse(SecretString);
 };
 
 let cached: Promise<AppSecrets> | undefined;
@@ -69,7 +49,7 @@ export const getSecrets = (): Promise<AppSecrets> => {
     const secretId = process.env.APP_SECRET_ID;
     cached = secretId
       ? loadFromSecretsManager(secretId)
-      : Promise.resolve().then(loadFromEnv);
+      : Promise.resolve().then(() => localEnvSchema.parse(process.env));
     // Let a failed load be retried by the next request instead of caching the failure.
     cached.catch(() => {
       cached = undefined;

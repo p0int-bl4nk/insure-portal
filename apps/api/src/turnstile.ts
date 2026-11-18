@@ -1,12 +1,27 @@
+import { z } from "zod";
+
 const SITEVERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+
+/** The parts of Cloudflare's siteverify response we use. */
+const siteverifySchema = z
+  .object({
+    success: z.boolean().catch(false),
+    "error-codes": z.array(z.string()).catch([]),
+  })
+  .transform((data) => ({
+    success: data.success,
+    errorCodes: data["error-codes"],
+  }));
+
+export type TurnstileResult = z.output<typeof siteverifySchema>;
 
 /** Server-side Turnstile check. Tokens are single-use and expire after 5 minutes. */
 export const verifyTurnstile = async (
   token: string,
   secret: string,
   remoteIp?: string
-): Promise<{ success: boolean; errorCodes: string[] }> => {
+): Promise<TurnstileResult> => {
   const body = new URLSearchParams({ secret, response: token });
   if (remoteIp) {
     body.set("remoteip", remoteIp);
@@ -19,12 +34,5 @@ export const verifyTurnstile = async (
   if (!res.ok) {
     return { success: false, errorCodes: [`http_${res.status}`] };
   }
-  const data = (await res.json()) as {
-    success?: boolean;
-    "error-codes"?: string[];
-  };
-  return {
-    success: data.success === true,
-    errorCodes: data["error-codes"] ?? [],
-  };
+  return siteverifySchema.parse(await res.json());
 };

@@ -4,6 +4,7 @@ import {
   countryName,
   EMIRATE_LABELS,
   GENDER_LABELS,
+  listMembers,
   MARITAL_STATUS_LABELS,
   RELATION_LABELS,
   SALARY_BAND_LABELS,
@@ -80,7 +81,10 @@ export const leadToRows = (
   leadId: string,
   submittedAt: Date
 ): { leadRow: Cell[]; memberRows: Cell[][] } => {
-  const { proposer, members } = lead;
+  const { proposer } = lead;
+  const members = listMembers(lead.members, proposer.gender);
+  const pregnantOf = ({ member }: (typeof members)[number]) =>
+    "pregnant" in member ? member.pregnant : undefined;
 
   const leadRow: Cell[] = [
     leadId,
@@ -96,21 +100,21 @@ export const leadToRows = (
     MARITAL_STATUS_LABELS[proposer.maritalStatus],
     members.length,
     yesNo(lead.hasPed),
-    yesNo(members.some((m) => m.smoker === true)),
-    yesNo(members.some((m) => m.pregnant === true)),
-    Math.max(...members.map((m) => m.age)),
+    yesNo(members.some(({ member }) => member.smoker === true)),
+    yesNo(members.some((entry) => pregnantOf(entry) === true)),
+    Math.max(...members.map(({ member }) => member.age)),
     CONSENT_VERSION,
   ];
 
-  const memberRows: Cell[][] = members.map((m, i) => [
+  const memberRows: Cell[][] = members.map((entry, i) => [
     leadId,
     i + 1,
-    RELATION_LABELS[m.relation],
-    m.age,
-    GENDER_LABELS[m.gender],
-    m.conditions.map((c) => CONDITION_LABELS[c]).join(", "),
-    yesNo(m.smoker),
-    yesNo(m.pregnant),
+    RELATION_LABELS[entry.relation],
+    entry.member.age,
+    entry.gender ? GENDER_LABELS[entry.gender] : "",
+    entry.member.conditions.map((c) => CONDITION_LABELS[c]).join(", "),
+    yesNo(entry.member.smoker),
+    yesNo(pregnantOf(entry)),
   ]);
 
   return { leadRow, memberRows };

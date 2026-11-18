@@ -1,84 +1,106 @@
 // Fixed option sets used by the form, the API validation and the Sheet columns.
+// Reference values through these objects (e.g. `Relation.Self`), never as string literals.
 // Values are stored in the Sheet as their labels, so changing a label changes the Sheet output.
 
-export const EMIRATES = ["dubai", "abu_dhabi", "other"] as const;
-export type Emirate = (typeof EMIRATES)[number];
+type ValueOf<T> = T[keyof T];
+
+export const Emirate = {
+  Dubai: "dubai",
+  AbuDhabi: "abu_dhabi",
+  Other: "other",
+} as const;
+export type Emirate = ValueOf<typeof Emirate>;
 export const EMIRATE_LABELS: Record<Emirate, string> = {
-  dubai: "Dubai",
-  abu_dhabi: "Abu Dhabi",
-  other: "Other",
+  [Emirate.Dubai]: "Dubai",
+  [Emirate.AbuDhabi]: "Abu Dhabi",
+  [Emirate.Other]: "Other",
 };
 
-export const SALARY_BANDS = ["upto_4000", "above_4000"] as const;
-export type SalaryBand = (typeof SALARY_BANDS)[number];
+export const SalaryBand = {
+  UpTo4000: "upto_4000",
+  Above4000: "above_4000",
+} as const;
+export type SalaryBand = ValueOf<typeof SalaryBand>;
 export const SALARY_BAND_LABELS: Record<SalaryBand, string> = {
-  upto_4000: "Up to AED 4,000",
-  above_4000: "Above AED 4,000",
+  [SalaryBand.UpTo4000]: "Up to AED 4,000",
+  [SalaryBand.Above4000]: "Above AED 4,000",
 };
 
-export const GENDERS = ["male", "female"] as const;
-export type Gender = (typeof GENDERS)[number];
+export const Gender = {
+  Male: "male",
+  Female: "female",
+} as const;
+export type Gender = ValueOf<typeof Gender>;
 export const GENDER_LABELS: Record<Gender, string> = {
-  male: "Male",
-  female: "Female",
+  [Gender.Male]: "Male",
+  [Gender.Female]: "Female",
 };
 
-export const MARITAL_STATUSES = ["single", "married"] as const;
-export type MaritalStatus = (typeof MARITAL_STATUSES)[number];
+export const MaritalStatus = {
+  Single: "single",
+  Married: "married",
+} as const;
+export type MaritalStatus = ValueOf<typeof MaritalStatus>;
 export const MARITAL_STATUS_LABELS: Record<MaritalStatus, string> = {
-  single: "Single",
-  married: "Married",
+  [MaritalStatus.Single]: "Single",
+  [MaritalStatus.Married]: "Married",
 };
 
-export const RELATIONS = [
-  "self",
-  "spouse",
-  "child",
-  "father",
-  "mother",
-] as const;
-export type Relation = (typeof RELATIONS)[number];
+/** Declaration order is the order members are listed in the form and the Sheet. */
+export const Relation = {
+  Self: "self",
+  Spouse: "spouse",
+  Child: "child",
+  Father: "father",
+  Mother: "mother",
+} as const;
+export type Relation = ValueOf<typeof Relation>;
+export const RELATION_ORDER: readonly Relation[] = Object.values(Relation);
 export const RELATION_LABELS: Record<Relation, string> = {
-  self: "Self",
-  spouse: "Spouse",
-  child: "Child",
-  father: "Father",
-  mother: "Mother",
+  [Relation.Self]: "Self",
+  [Relation.Spouse]: "Spouse",
+  [Relation.Child]: "Child",
+  [Relation.Father]: "Father",
+  [Relation.Mother]: "Mother",
 };
 
-export const CONDITIONS = [
-  "diabetes",
-  "hypertension",
-  "heart",
-  "respiratory",
-  "thyroid",
-  "cancer",
-  "kidney",
-  "other",
-] as const;
-export type Condition = (typeof CONDITIONS)[number];
+/** Declaration order is the order conditions are listed in the form. */
+export const Condition = {
+  Diabetes: "diabetes",
+  Hypertension: "hypertension",
+  Heart: "heart",
+  Respiratory: "respiratory",
+  Thyroid: "thyroid",
+  Cancer: "cancer",
+  Kidney: "kidney",
+  Other: "other",
+} as const;
+export type Condition = ValueOf<typeof Condition>;
 export const CONDITION_LABELS: Record<Condition, string> = {
-  diabetes: "Diabetes",
-  hypertension: "High blood pressure",
-  heart: "Heart condition",
-  respiratory: "Asthma / respiratory",
-  thyroid: "Thyroid",
-  cancer: "Cancer (current/past)",
-  kidney: "Kidney condition",
-  other: "Other",
+  [Condition.Diabetes]: "Diabetes",
+  [Condition.Hypertension]: "High blood pressure",
+  [Condition.Heart]: "Heart condition",
+  [Condition.Respiratory]: "Asthma / respiratory",
+  [Condition.Thyroid]: "Thyroid",
+  [Condition.Cancer]: "Cancer (current/past)",
+  [Condition.Kidney]: "Kidney condition",
+  [Condition.Other]: "Other",
 };
 
 export const MAX_CHILDREN = 4;
 
 /** Relations that can only be covered when the proposer is married. */
-export const MARRIED_ONLY_RELATIONS: readonly Relation[] = ["spouse", "child"];
+export const MARRIED_ONLY_RELATIONS: readonly Relation[] = [
+  Relation.Spouse,
+  Relation.Child,
+];
 
 export const AGE_LIMITS: Record<Relation, { min: number; max: number }> = {
-  self: { min: 18, max: 99 },
-  spouse: { min: 18, max: 99 },
-  child: { min: 0, max: 25 },
-  father: { min: 18, max: 99 },
-  mother: { min: 18, max: 99 },
+  [Relation.Self]: { min: 18, max: 99 },
+  [Relation.Spouse]: { min: 18, max: 99 },
+  [Relation.Child]: { min: 0, max: 25 },
+  [Relation.Father]: { min: 18, max: 99 },
+  [Relation.Mother]: { min: 18, max: 99 },
 };
 
 /** Bump when the consent wording shown to users changes. Stored with every lead. */
