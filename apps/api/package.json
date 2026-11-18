@@ -1,0 +1,23 @@
+{
+  "name": "@insure/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/dev-server.ts",
+    "sheet:init": "tsx --env-file-if-exists=.env src/scripts/init-sheet.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "3.1171.0",
+    "@insure/shared": "workspace:*",
+    "google-auth-library": "11.3.4"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.164",
+    "@types/node": "catalog:",
+    "tsx": "4.23.15",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
