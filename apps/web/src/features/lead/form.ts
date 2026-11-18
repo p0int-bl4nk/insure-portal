@@ -1,10 +1,12 @@
 import {
+  CONDITION_LABELS,
   isAdult,
   isPregnancyEligible,
   RELATION_LABELS,
   RELATIONS,
 } from "@insure/shared";
 import type {
+  Condition,
   Gender,
   LeadInput,
   MaritalStatus,
@@ -15,7 +17,12 @@ import type { DefaultValues } from "react-hook-form";
 export type LeadFormValues = LeadInput;
 export type MemberFormValues = LeadFormValues["members"][number];
 
-export const STEP_COUNT = 3;
+export const STEP_TITLES = [
+  "About you",
+  "Who's covered",
+  "Health details",
+] as const;
+export const STEP_COUNT = STEP_TITLES.length;
 
 export const defaultValues: DefaultValues<LeadFormValues> = {
   proposer: { fullName: "", mobile: "", email: "" },
@@ -23,7 +30,7 @@ export const defaultValues: DefaultValues<LeadFormValues> = {
   consent: undefined,
 };
 
-/** Members stay ordered: self, spouse, children, father, mother, domestic worker. */
+/** Members stay ordered: self, spouse, children, father, mother. */
 export const insertIndex = (
   members: MemberFormValues[],
   relation: Relation
@@ -121,3 +128,35 @@ export const pruneHealthAnswers = (
     }
     return next;
   });
+
+/** "None", "Diabetes, Thyroid" or "Diabetes, Thyroid and 3 more". */
+export const summarizeConditions = (
+  conditions: readonly Condition[],
+  shown = 2
+): string => {
+  if (conditions.length === 0) {
+    return "None";
+  }
+  const names = conditions.slice(0, shown).map((c) => CONDITION_LABELS[c]);
+  const rest = conditions.length - shown;
+  return rest > 0 ? `${names.join(", ")} and ${rest} more` : names.join(", ");
+};
+
+/**
+ * Mobile input after the fixed +971 prefix: at most 9 digits, shown as "50 123 4567".
+ * Accepts pasted "+971 50…", "00971 50…" or "050…" by dropping the prefix.
+ */
+export const formatMobileInput = (raw: string): string => {
+  let digits = raw.replaceAll(/\D/gu, "");
+  if (digits.startsWith("00971")) {
+    digits = digits.slice(5);
+  } else if (digits.startsWith("971") && digits.length > 9) {
+    digits = digits.slice(3);
+  } else if (digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+  digits = digits.slice(0, 9);
+  return [digits.slice(0, 2), digits.slice(2, 5), digits.slice(5)]
+    .filter(Boolean)
+    .join(" ");
+};

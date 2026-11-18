@@ -1,22 +1,16 @@
 import { cn } from "cn";
 
 import { STEP_COUNT } from "./form";
-
-export const BrandMark = () => (
-  <div className="flex items-center gap-2">
-    {/* Placeholder until the real logo is supplied. */}
-    <div className="border-foreground flex size-7 items-center justify-center border text-[9px] font-bold">
-      LOGO
-    </div>
-    <span className="text-xs font-semibold tracking-wider">HEALTH COVER</span>
-  </div>
-);
+import { BrandMark } from "./wizard-layout";
 
 export const StepHeader = ({ step }: { step: number }) => (
-  <header className="flex flex-col gap-3 px-5 pt-4">
+  <header className="flex flex-col gap-3 px-5 pt-4 md:px-8 md:pt-6">
     <div className="flex items-center justify-between">
-      <BrandMark />
-      <span className="text-muted-foreground text-[11px]">
+      {/* On desktop the side panel carries the brand. */}
+      <div className="lg:hidden">
+        <BrandMark />
+      </div>
+      <span className="text-muted-foreground text-[11px] lg:ml-auto">
         STEP {step + 1} / {STEP_COUNT}
       </span>
     </div>

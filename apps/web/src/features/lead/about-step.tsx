@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/input-group";
 
 import { ChoiceGroup } from "./choice-group";
+import { formatMobileInput } from "./form";
 import type { LeadFormValues } from "./form";
 
 const options = <T extends string>(
@@ -54,102 +55,113 @@ export const AboutStep = () => {
     formState: { errors },
   } = useFormContext<LeadFormValues>();
   const e = errors.proposer;
+  const mobileField = register("proposer.mobile");
 
   return (
     <FieldGroup>
-      <Field data-invalid={!!e?.fullName || undefined}>
-        <FieldLabel htmlFor="fullName">Full name</FieldLabel>
-        <Input
-          id="fullName"
-          autoComplete="name"
-          className="h-10"
-          aria-invalid={!!e?.fullName || undefined}
-          {...register("proposer.fullName")}
-        />
-        <FieldError errors={[e?.fullName]} />
-      </Field>
-
-      <Field data-invalid={!!e?.mobile || undefined}>
-        <FieldLabel htmlFor="mobile">Mobile number</FieldLabel>
-        <InputGroup className="h-10">
-          <InputGroupAddon>
-            <InputGroupText>+971</InputGroupText>
-          </InputGroupAddon>
-          <InputGroupInput
-            id="mobile"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel-national"
-            placeholder="50 123 4567"
-            aria-invalid={!!e?.mobile || undefined}
-            {...register("proposer.mobile")}
+      <div className="grid gap-5 md:grid-cols-2 md:items-start md:gap-x-4">
+        <Field data-invalid={!!e?.fullName || undefined}>
+          <FieldLabel htmlFor="fullName">Full name</FieldLabel>
+          <Input
+            id="fullName"
+            autoComplete="name"
+            className="h-10"
+            aria-invalid={!!e?.fullName || undefined}
+            {...register("proposer.fullName")}
           />
-        </InputGroup>
-        {e?.mobile ? (
-          <FieldError errors={[e.mobile]} />
-        ) : (
-          <FieldDescription>
-            UAE mobile starting with 5. We&apos;ll call or WhatsApp you with
-            quotes.
-          </FieldDescription>
-        )}
-      </Field>
+          <FieldError errors={[e?.fullName]} />
+        </Field>
 
-      <Field data-invalid={!!e?.email || undefined}>
-        <FieldLabel htmlFor="email">
-          Email{" "}
-          <span className="text-muted-foreground font-normal">(optional)</span>
-        </FieldLabel>
-        <Input
-          id="email"
-          type="email"
-          autoComplete="email"
-          placeholder="you@example.com"
-          className="h-10"
-          aria-invalid={!!e?.email || undefined}
-          {...register("proposer.email")}
+        <Field data-invalid={!!e?.mobile || undefined}>
+          <FieldLabel htmlFor="mobile">Mobile number</FieldLabel>
+          <InputGroup className="h-10">
+            <InputGroupAddon>
+              <InputGroupText>+971</InputGroupText>
+            </InputGroupAddon>
+            <InputGroupInput
+              id="mobile"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel-national"
+              placeholder="50 123 4567"
+              aria-invalid={!!e?.mobile || undefined}
+              {...mobileField}
+              onChange={(event) => {
+                event.target.value = formatMobileInput(event.target.value);
+                return mobileField.onChange(event);
+              }}
+            />
+          </InputGroup>
+          {e?.mobile ? (
+            <FieldError errors={[e.mobile]} />
+          ) : (
+            <FieldDescription>
+              UAE mobile starting with 5. We&apos;ll call or WhatsApp you with
+              quotes.
+            </FieldDescription>
+          )}
+        </Field>
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-2 md:items-start md:gap-x-4">
+        <Field data-invalid={!!e?.email || undefined}>
+          <FieldLabel htmlFor="email">
+            Email{" "}
+            <span className="text-muted-foreground font-normal">
+              (optional)
+            </span>
+          </FieldLabel>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            className="h-10"
+            aria-invalid={!!e?.email || undefined}
+            {...register("proposer.email")}
+          />
+          <FieldError errors={[e?.email]} />
+        </Field>
+
+        <Controller
+          control={control}
+          name="proposer.nationality"
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid || undefined}>
+              <FieldLabel htmlFor="nationality">Nationality</FieldLabel>
+              <Combobox<Country>
+                items={COUNTRIES}
+                value={COUNTRIES.find((c) => c.code === field.value) ?? null}
+                onValueChange={(country) =>
+                  field.onChange(country?.code as CountryCode)
+                }
+                itemToStringLabel={(country) => country.name}
+                isItemEqualToValue={(a, b) => a.code === b.code}
+              >
+                <ComboboxInput
+                  id="nationality"
+                  placeholder="Search countries"
+                  autoComplete="off"
+                  className="h-10 w-full"
+                  aria-invalid={fieldState.invalid || undefined}
+                  onBlur={field.onBlur}
+                />
+                <ComboboxContent>
+                  <ComboboxEmpty>No country found.</ComboboxEmpty>
+                  <ComboboxList>
+                    {(country: Country) => (
+                      <ComboboxItem key={country.code} value={country}>
+                        {country.name}
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                </ComboboxContent>
+              </Combobox>
+              <FieldError errors={[fieldState.error]} />
+            </Field>
+          )}
         />
-        <FieldError errors={[e?.email]} />
-      </Field>
-
-      <Controller
-        control={control}
-        name="proposer.nationality"
-        render={({ field, fieldState }) => (
-          <Field data-invalid={fieldState.invalid || undefined}>
-            <FieldLabel htmlFor="nationality">Nationality</FieldLabel>
-            <Combobox<Country>
-              items={COUNTRIES}
-              value={COUNTRIES.find((c) => c.code === field.value) ?? null}
-              onValueChange={(country) =>
-                field.onChange(country?.code as CountryCode)
-              }
-              itemToStringLabel={(country) => country.name}
-              isItemEqualToValue={(a, b) => a.code === b.code}
-            >
-              <ComboboxInput
-                id="nationality"
-                placeholder="Search countries"
-                autoComplete="off"
-                className="h-10 w-full"
-                aria-invalid={fieldState.invalid || undefined}
-                onBlur={field.onBlur}
-              />
-              <ComboboxContent>
-                <ComboboxEmpty>No country found.</ComboboxEmpty>
-                <ComboboxList>
-                  {(country: Country) => (
-                    <ComboboxItem key={country.code} value={country}>
-                      {country.name}
-                    </ComboboxItem>
-                  )}
-                </ComboboxList>
-              </ComboboxContent>
-            </Combobox>
-            <FieldError errors={[fieldState.error]} />
-          </Field>
-        )}
-      />
+      </div>
 
       <Controller
         control={control}

@@ -7,6 +7,7 @@ import {
   EMIRATES,
   GENDERS,
   MARITAL_STATUSES,
+  MARRIED_ONLY_RELATIONS,
   MAX_CHILDREN,
   RELATION_LABELS,
   RELATIONS,
@@ -98,13 +99,7 @@ export const isPregnancyEligible = (
   (member.relation === "spouse" ||
     (member.relation === "self" && proposerMaritalStatus === "married"));
 
-const SINGLE_RELATIONS: Relation[] = [
-  "self",
-  "spouse",
-  "father",
-  "mother",
-  "domestic_worker",
-];
+const SINGLE_RELATIONS: Relation[] = ["self", "spouse", "father", "mother"];
 
 type RefineCtx = z.RefinementCtx;
 type ProposerOut = z.output<typeof proposerSchema>;
@@ -137,11 +132,14 @@ const checkComposition = (
   if (count("child") > MAX_CHILDREN) {
     issue(ctx, ["members"], `Add up to ${MAX_CHILDREN} children.`);
   }
-  if (count("spouse") > 0 && proposer.maritalStatus !== "married") {
+  if (
+    proposer.maritalStatus !== "married" &&
+    MARRIED_ONLY_RELATIONS.some((relation) => count(relation) > 0)
+  ) {
     issue(
       ctx,
-      ["proposer", "maritalStatus"],
-      "Choose Married to cover a spouse."
+      ["members"],
+      "Spouse and children can only be added when marital status is Married."
     );
   }
   for (const [i, member] of members.entries()) {
@@ -202,7 +200,7 @@ const checkHealth = (
 const membersArray = z
   .array(memberSchema)
   .min(1)
-  .max(5 + MAX_CHILDREN);
+  .max(4 + MAX_CHILDREN);
 
 /** Wizard step 1: about you. */
 export const aboutStepSchema = z.object({ proposer: proposerSchema });

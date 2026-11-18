@@ -36,7 +36,6 @@ export const RELATIONS = [
   "child",
   "father",
   "mother",
-  "domestic_worker",
 ] as const;
 export type Relation = (typeof RELATIONS)[number];
 export const RELATION_LABELS: Record<Relation, string> = {
@@ -45,7 +44,6 @@ export const RELATION_LABELS: Record<Relation, string> = {
   child: "Child",
   father: "Father",
   mother: "Mother",
-  domestic_worker: "Domestic worker",
 };
 
 export const CONDITIONS = [
@@ -72,13 +70,15 @@ export const CONDITION_LABELS: Record<Condition, string> = {
 
 export const MAX_CHILDREN = 4;
 
+/** Relations that can only be covered when the proposer is married. */
+export const MARRIED_ONLY_RELATIONS: readonly Relation[] = ["spouse", "child"];
+
 export const AGE_LIMITS: Record<Relation, { min: number; max: number }> = {
   self: { min: 18, max: 99 },
   spouse: { min: 18, max: 99 },
   child: { min: 0, max: 25 },
   father: { min: 18, max: 99 },
   mother: { min: 18, max: 99 },
-  domestic_worker: { min: 18, max: 99 },
 };
 
 /** Bump when the consent wording shown to users changes. Stored with every lead. */

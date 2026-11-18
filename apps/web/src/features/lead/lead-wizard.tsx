@@ -3,6 +3,7 @@ import {
   aboutStepSchema,
   EMIRATE_LABELS,
   leadSchema,
+  MARRIED_ONLY_RELATIONS,
   membersStepSchema,
   RELATION_LABELS,
 } from "@insure/shared";
@@ -32,6 +33,7 @@ import { HealthStep } from "./health-step";
 import { MembersStep } from "./members-step";
 import { StepHeader } from "./step-header";
 import { SuccessScreen } from "./success-screen";
+import { WizardLayout } from "./wizard-layout";
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string;
 
@@ -135,6 +137,14 @@ export const LeadWizard = () => {
     if (step === 0) {
       // "Self" mirrors the proposer's gender from step 1.
       setValue("members.0.gender", getValues("proposer.gender"));
+      if (getValues("proposer.maritalStatus") !== "married") {
+        setValue(
+          "members",
+          getValues("members").filter(
+            (m) => !MARRIED_ONLY_RELATIONS.includes(m.relation)
+          )
+        );
+      }
     }
     if (step === 1) {
       setValue(
@@ -218,94 +228,96 @@ export const LeadWizard = () => {
   }
 
   return (
-    <FormProvider {...form}>
-      <form
-        noValidate
-        onSubmit={handleFormSubmit}
-        className="mx-auto flex min-h-svh w-full max-w-md flex-col"
-      >
-        <StepHeader step={step} />
+    <WizardLayout step={step}>
+      <FormProvider {...form}>
+        <form
+          noValidate
+          onSubmit={handleFormSubmit}
+          className="flex min-h-svh flex-col md:min-h-0"
+        >
+          <StepHeader step={step} />
 
-        <main className="flex flex-1 flex-col gap-6 px-5 pt-7 pb-6">
-          {isLast && submitError && (
-            <Alert variant="destructive">
-              <WarningCircleIcon />
-              <AlertTitle>{SUBMIT_ERRORS[submitError].title}</AlertTitle>
-              <AlertDescription>
-                {SUBMIT_ERRORS[submitError].body}
-              </AlertDescription>
-            </Alert>
-          )}
+          <main className="flex flex-1 flex-col gap-6 px-5 pt-7 pb-6 md:px-8 md:pt-8 md:pb-8">
+            {isLast && submitError && (
+              <Alert variant="destructive">
+                <WarningCircleIcon />
+                <AlertTitle>{SUBMIT_ERRORS[submitError].title}</AlertTitle>
+                <AlertDescription>
+                  {SUBMIT_ERRORS[submitError].body}
+                </AlertDescription>
+              </Alert>
+            )}
 
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {current.title}
-            </h1>
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              {current.intro}
-            </p>
-          </div>
+            <div className="flex flex-col gap-1.5">
+              <h1 className="text-xl font-semibold tracking-tight">
+                {current.title}
+              </h1>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {current.intro}
+              </p>
+            </div>
 
-          {step === 0 && <AboutStep />}
-          {step === 1 && <MembersStep />}
-          {step === 2 && (
-            <>
-              <HealthStep />
-              <div className="flex flex-col gap-2">
-                <Turnstile
-                  ref={turnstile}
-                  siteKey={TURNSTILE_SITE_KEY}
-                  options={{ size: "flexible", theme: "light" }}
-                  onSuccess={(t) => {
-                    setToken(t);
-                    setTokenMissing(false);
-                  }}
-                  onExpire={() => setToken(null)}
-                  onError={() => setToken(null)}
-                />
-                {tokenMissing && (
-                  <FieldError>Complete the check to continue.</FieldError>
-                )}
-              </div>
-            </>
-          )}
+            {step === 0 && <AboutStep />}
+            {step === 1 && <MembersStep />}
+            {step === 2 && (
+              <>
+                <HealthStep />
+                <div className="flex flex-col gap-2">
+                  <Turnstile
+                    ref={turnstile}
+                    siteKey={TURNSTILE_SITE_KEY}
+                    options={{ size: "flexible", theme: "light" }}
+                    onSuccess={(t) => {
+                      setToken(t);
+                      setTokenMissing(false);
+                    }}
+                    onExpire={() => setToken(null)}
+                    onError={() => setToken(null)}
+                  />
+                  {tokenMissing && (
+                    <FieldError>Complete the check to continue.</FieldError>
+                  )}
+                </div>
+              </>
+            )}
 
-          {/* Honeypot: invisible to people and skipped by keyboard and screen readers. */}
-          <input
-            ref={honeypot}
-            name="website"
-            type="text"
-            tabIndex={-1}
-            autoComplete="off"
-            aria-hidden="true"
-            className="absolute -left-[9999px] size-px opacity-0"
-          />
-        </main>
+            {/* Honeypot: invisible to people and skipped by keyboard and screen readers. */}
+            <input
+              ref={honeypot}
+              name="website"
+              type="text"
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              className="absolute -left-[9999px] size-px opacity-0"
+            />
+          </main>
 
-        <footer className="border-border bg-background sticky bottom-0 flex gap-2 border-t px-5 pt-4 pb-6">
-          {step > 0 && (
+          <footer className="border-border bg-background sticky bottom-0 flex gap-2 border-t px-5 pt-4 pb-6 md:static md:justify-end md:px-8 md:py-5">
+            {step > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="touch"
+                className="w-24"
+                onClick={() => goTo(step - 1)}
+                disabled={formState.isSubmitting}
+              >
+                <ArrowLeftIcon data-icon="inline-start" />
+                Back
+              </Button>
+            )}
             <Button
-              type="button"
-              variant="outline"
+              type="submit"
               size="touch"
-              className="w-24"
-              onClick={() => goTo(step - 1)}
+              className="flex-1 md:w-56 md:flex-none"
               disabled={formState.isSubmitting}
             >
-              <ArrowLeftIcon data-icon="inline-start" />
-              Back
+              {submitLabel}
             </Button>
-          )}
-          <Button
-            type="submit"
-            size="touch"
-            className="flex-1"
-            disabled={formState.isSubmitting}
-          >
-            {submitLabel}
-          </Button>
-        </footer>
-      </form>
-    </FormProvider>
+          </footer>
+        </form>
+      </FormProvider>
+    </WizardLayout>
   );
 };

@@ -16,7 +16,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 
 import { YesNoChoice } from "./choice-group";
-import { memberEligibility, memberLabel } from "./form";
+import { memberEligibility, memberLabel, summarizeConditions } from "./form";
 import type { LeadFormValues } from "./form";
 
 export const HealthStep = () => {
@@ -43,7 +43,8 @@ export const HealthStep = () => {
             {
               key: `${index}-smoker`,
               name: `members.${index}.smoker` as const,
-              text: `${label} smokes or uses tobacco`,
+              who: label,
+              text: "smokes or uses tobacco",
             },
           ]
         : []),
@@ -52,7 +53,8 @@ export const HealthStep = () => {
             {
               key: `${index}-pregnant`,
               name: `members.${index}.pregnant` as const,
-              text: `${label} is currently pregnant`,
+              who: label,
+              text: "is currently pregnant",
             },
           ]
         : []),
@@ -101,10 +103,7 @@ export const HealthStep = () => {
           {members.map((member, index) => {
             const label = `${memberLabel(members, index)} · ${member.age}`;
             const selected = member.conditions ?? [];
-            const summary =
-              selected.length === 0
-                ? "None"
-                : selected.map((c) => CONDITION_LABELS[c]).join(", ");
+            const summary = summarizeConditions(selected);
             const panelId = `conditions-${index}`;
             const expanded = open === index;
             return (
@@ -138,7 +137,7 @@ export const HealthStep = () => {
                       return (
                         <div
                           id={panelId}
-                          className="grid grid-cols-2 gap-x-3 gap-y-2.5 px-3.5 pb-3.5"
+                          className="grid grid-cols-2 gap-x-3 gap-y-2.5 px-3.5 pb-3.5 md:grid-cols-3"
                         >
                           {CONDITIONS.map((condition) => {
                             const id = `${panelId}-${condition}`;
@@ -201,6 +200,9 @@ export const HealthStep = () => {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <FieldLabel id={`${q.key}-label`} className="font-normal">
+                        <span className="text-primary font-semibold">
+                          {q.who}
+                        </span>{" "}
                         {q.text}
                       </FieldLabel>
                       <YesNoChoice

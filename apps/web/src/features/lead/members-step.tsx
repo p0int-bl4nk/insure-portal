@@ -1,6 +1,12 @@
-import { GENDER_LABELS, GENDERS, MAX_CHILDREN } from "@insure/shared";
+import {
+  GENDER_LABELS,
+  GENDERS,
+  MARRIED_ONLY_RELATIONS,
+  MAX_CHILDREN,
+} from "@insure/shared";
 import type { Relation } from "@insure/shared";
 import { CheckIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
+import { cn } from "cn";
 import {
   Controller,
   useFieldArray,
@@ -12,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -32,7 +39,6 @@ const TILES: { relation: Relation; label: string }[] = [
   { relation: "child", label: "Children" },
   { relation: "father", label: "Father" },
   { relation: "mother", label: "Mother" },
-  { relation: "domestic_worker", label: "Domestic worker" },
 ];
 
 const GENDER_SHORT = GENDERS.map((value) => ({
@@ -53,6 +59,8 @@ export const MembersStep = () => {
   });
   const members = useWatch({ control, name: "members" }) ?? [];
   const proposerGender = useWatch({ control, name: "proposer.gender" });
+  const isMarried =
+    useWatch({ control, name: "proposer.maritalStatus" }) === "married";
 
   const countOf = (relation: Relation) =>
     members.filter((m) => m.relation === relation).length;
@@ -83,7 +91,7 @@ export const MembersStep = () => {
     <FieldGroup>
       <FieldSet data-invalid={!!rootError || undefined}>
         <FieldLegend variant="label">Members</FieldLegend>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
           {TILES.map(({ relation, label }) => {
             const pressed = countOf(relation) > 0;
             return (
@@ -92,9 +100,16 @@ export const MembersStep = () => {
                 variant="choice"
                 size="touch"
                 pressed={pressed}
-                disabled={relation === "self"}
+                disabled={
+                  relation === "self" ||
+                  (!isMarried && MARRIED_ONLY_RELATIONS.includes(relation))
+                }
                 onPressedChange={(on) => toggle(relation, on)}
-                className="h-11 justify-start gap-2 disabled:opacity-100"
+                className={cn(
+                  "h-11 justify-start gap-2",
+                  // Self is always included: keep it looking selected, not disabled.
+                  relation === "self" && "disabled:opacity-100"
+                )}
               >
                 {pressed ? (
                   <CheckIcon data-icon="inline-start" />
@@ -109,6 +124,12 @@ export const MembersStep = () => {
             );
           })}
         </div>
+        {!isMarried && (
+          <FieldDescription>
+            Spouse and children can be added when your marital status is
+            Married.
+          </FieldDescription>
+        )}
         <FieldError errors={[rootError]} />
       </FieldSet>
 
@@ -119,99 +140,104 @@ export const MembersStep = () => {
           Member details
         </h2>
 
-        {fields.map((field, index) => {
-          const member = members[index];
-          const memberErrors = errors.members?.[index];
-          const label = memberLabel(members, index);
-          const isSelf = member?.relation === "self";
-          const ageId = `member-${field.id}-age`;
-          return (
-            <FieldSet
-              key={field.id}
-              className="border-border gap-3 border p-3.5"
-            >
-              <div className="flex min-h-8 items-center justify-between">
-                <FieldLegend variant="label" className="mb-0 font-semibold">
-                  {label}
-                </FieldLegend>
-                {isSelf && <Badge variant="secondary">FROM STEP 1</Badge>}
-                {member?.relation === "child" && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Remove ${label.toLowerCase()}`}
-                    onClick={() => remove(index)}
+        <div className="grid gap-3 md:grid-cols-2">
+          {fields.map((field, index) => {
+            const member = members[index];
+            const memberErrors = errors.members?.[index];
+            const label = memberLabel(members, index);
+            const isSelf = member?.relation === "self";
+            const ageId = `member-${field.id}-age`;
+            return (
+              <FieldSet
+                key={field.id}
+                className="border-border gap-3 border p-3.5"
+              >
+                <div className="flex min-h-8 items-center justify-between">
+                  <FieldLegend variant="label" className="mb-0 font-semibold">
+                    {label}
+                  </FieldLegend>
+                  {isSelf && <Badge variant="secondary">FROM STEP 1</Badge>}
+                  {member?.relation === "child" && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove ${label.toLowerCase()}`}
+                      onClick={() => remove(index)}
+                    >
+                      <XIcon />
+                    </Button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field
+                    data-invalid={!!memberErrors?.age || undefined}
+                    className="min-w-0"
                   >
-                    <XIcon />
-                  </Button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field
-                  data-invalid={!!memberErrors?.age || undefined}
-                  className="min-w-0"
-                >
-                  <FieldLabel htmlFor={ageId} className="text-muted-foreground">
-                    Age
-                  </FieldLabel>
-                  <Input
-                    id={ageId}
-                    inputMode="numeric"
-                    maxLength={2}
-                    className="h-10"
-                    aria-invalid={!!memberErrors?.age || undefined}
-                    {...register(`members.${index}.age`)}
-                  />
-                  <FieldError errors={[memberErrors?.age]} />
-                </Field>
-                {isSelf ? (
-                  <Field className="min-w-0">
-                    <FieldLabel className="text-muted-foreground">
-                      Gender
+                    <FieldLabel
+                      htmlFor={ageId}
+                      className="text-muted-foreground"
+                    >
+                      Age
                     </FieldLabel>
-                    <div className="border-input bg-muted/50 text-muted-foreground flex h-10 items-center border px-2.5 text-xs">
-                      {proposerGender ? GENDER_LABELS[proposerGender] : "—"}
-                    </div>
+                    <Input
+                      id={ageId}
+                      inputMode="numeric"
+                      maxLength={2}
+                      className="h-10"
+                      aria-invalid={!!memberErrors?.age || undefined}
+                      {...register(`members.${index}.age`)}
+                    />
+                    <FieldError errors={[memberErrors?.age]} />
                   </Field>
-                ) : (
-                  <Controller
-                    control={control}
-                    name={`members.${index}.gender`}
-                    render={({ field: gender, fieldState }) => (
-                      <Field
-                        data-invalid={fieldState.invalid || undefined}
-                        className="min-w-0"
-                      >
-                        <FieldLabel
-                          id={`${ageId}-gender`}
-                          className="text-muted-foreground"
+                  {isSelf ? (
+                    <Field className="min-w-0">
+                      <FieldLabel className="text-muted-foreground">
+                        Gender
+                      </FieldLabel>
+                      <div className="border-input bg-muted/50 text-muted-foreground flex h-10 items-center border px-2.5 text-xs">
+                        {proposerGender ? GENDER_LABELS[proposerGender] : "—"}
+                      </div>
+                    </Field>
+                  ) : (
+                    <Controller
+                      control={control}
+                      name={`members.${index}.gender`}
+                      render={({ field: gender, fieldState }) => (
+                        <Field
+                          data-invalid={fieldState.invalid || undefined}
+                          className="min-w-0"
                         >
-                          Gender
-                        </FieldLabel>
-                        <ChoiceGroup
-                          aria-labelledby={`${ageId}-gender`}
-                          options={GENDER_SHORT}
-                          value={gender.value}
-                          onChange={gender.onChange}
-                          invalid={fieldState.invalid}
-                        />
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
-                )}
-              </div>
-            </FieldSet>
-          );
-        })}
+                          <FieldLabel
+                            id={`${ageId}-gender`}
+                            className="text-muted-foreground"
+                          >
+                            Gender
+                          </FieldLabel>
+                          <ChoiceGroup
+                            aria-labelledby={`${ageId}-gender`}
+                            options={GENDER_SHORT}
+                            value={gender.value}
+                            onChange={gender.onChange}
+                            invalid={fieldState.invalid}
+                          />
+                          <FieldError errors={[fieldState.error]} />
+                        </Field>
+                      )}
+                    />
+                  )}
+                </div>
+              </FieldSet>
+            );
+          })}
+        </div>
 
         {childCount > 0 && childCount < MAX_CHILDREN && (
           <Button
             type="button"
             variant="outline"
             size="touch"
-            className="border-dashed"
+            className="border-dashed md:self-start"
             onClick={() => add("child")}
           >
             <PlusIcon data-icon="inline-start" />

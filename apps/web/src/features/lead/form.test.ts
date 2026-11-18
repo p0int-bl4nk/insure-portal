@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatMobileInput,
   insertIndex,
   memberEligibility,
   memberLabel,
   newMember,
   pruneHealthAnswers,
+  summarizeConditions,
 } from "./form";
 import type { MemberFormValues } from "./form";
 
@@ -26,7 +28,7 @@ describe(insertIndex, () => {
     ];
     expect(insertIndex(members, "spouse")).toBe(1);
     expect(insertIndex(members, "child")).toBe(2);
-    expect(insertIndex(members, "domestic_worker")).toBe(3);
+    expect(insertIndex(members, "father")).toBe(2);
   });
 });
 
@@ -73,5 +75,38 @@ describe(pruneHealthAnswers, () => {
     );
     expect(child).not.toHaveProperty("smoker");
     expect(child).not.toHaveProperty("pregnant");
+  });
+});
+
+describe(summarizeConditions, () => {
+  it("shows two names, then a count of the rest", () => {
+    expect(summarizeConditions([])).toBe("None");
+    expect(summarizeConditions(["diabetes", "thyroid"])).toBe(
+      "Diabetes, Thyroid"
+    );
+    expect(
+      summarizeConditions([
+        "diabetes",
+        "respiratory",
+        "kidney",
+        "thyroid",
+        "other",
+      ])
+    ).toBe("Diabetes, Asthma / respiratory and 3 more");
+  });
+});
+
+describe(formatMobileInput, () => {
+  it.each([
+    ["5", "5"],
+    ["501", "50 1"],
+    ["501234567", "50 123 4567"],
+    ["50123456789", "50 123 4567"],
+    ["0501234567", "50 123 4567"],
+    ["+971 50 123 4567", "50 123 4567"],
+    ["00971501234567", "50 123 4567"],
+    ["50-abc-123", "50 123"],
+  ])("formats %s as %s", (raw, expected) => {
+    expect(formatMobileInput(raw)).toBe(expected);
   });
 });

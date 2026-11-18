@@ -95,10 +95,20 @@ describe("lead schema", () => {
     expect(issuePaths(input)).toContain("members");
   });
 
-  it("rejects a spouse when the proposer is single", () => {
-    const input = validLead();
-    input.proposer.maritalStatus = "single";
-    expect(issuePaths(input)).toContain("proposer.maritalStatus");
+  it("rejects a spouse or children when the proposer is single", () => {
+    const withSpouse = validLead();
+    withSpouse.proposer.maritalStatus = "single";
+    withSpouse.members = withSpouse.members.filter(
+      (m) => m.relation !== "child"
+    );
+    expect(issuePaths(withSpouse)).toContain("members");
+
+    const withChildOnly = validLead();
+    withChildOnly.proposer.maritalStatus = "single";
+    withChildOnly.members = withChildOnly.members.filter(
+      (m) => m.relation !== "spouse"
+    );
+    expect(issuePaths(withChildOnly)).toContain("members");
   });
 
   it("enforces per-relation age limits", () => {
