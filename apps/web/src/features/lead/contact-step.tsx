@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { formatEmiratesIdInput, formatMobileInput } from "@/lib/utils";
 
 import { NationalityField } from "./combo-field";
+import { describedBy, errorId } from "./form";
 import type { LeadFormValues } from "./form";
 import { SectionHeading } from "./section-heading";
 import { TextField } from "./text-field";
@@ -29,7 +30,7 @@ const SponsorFields = () => (
   <section className="flex flex-col gap-5" aria-labelledby="sponsor-heading">
     <div className="flex flex-col gap-1">
       <SectionHeading id="sponsor-heading">Sponsor details</SectionHeading>
-      <p className="text-muted-foreground text-xs">
+      <p className="text-muted-foreground text-sm">
         You, as the visa sponsor of the people you&apos;re covering.
       </p>
     </div>
@@ -92,6 +93,11 @@ export const ContactStep = () => {
                   autoComplete="tel-national"
                   placeholder="50 123 4567"
                   aria-invalid={fieldState.invalid || undefined}
+                  aria-describedby={describedBy(
+                    field.name,
+                    fieldState.invalid,
+                    "mobile-hint"
+                  )}
                   name={field.name}
                   ref={field.ref}
                   value={field.value ?? ""}
@@ -103,9 +109,12 @@ export const ContactStep = () => {
               </InputGroup>
 
               {fieldState.error ? (
-                <FieldError errors={[fieldState.error]} />
+                <FieldError
+                  id={errorId(field.name)}
+                  errors={[fieldState.error]}
+                />
               ) : (
-                <FieldDescription>
+                <FieldDescription id="mobile-hint">
                   We&apos;ll call or WhatsApp you with quotes.
                 </FieldDescription>
               )}

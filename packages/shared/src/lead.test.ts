@@ -110,6 +110,15 @@ const issuePaths = (input: unknown) => {
   return result.success ? [] : result.error.issues.map((i) => i.path.join("."));
 };
 
+/** Name-field issue paths for a lead whose holder has these names. */
+const nameIssues = (firstName: string, lastName: string, middleName = "") => {
+  const input = validLead();
+  if (input.members.self) {
+    Object.assign(input.members.self, { firstName, middleName, lastName });
+  }
+  return issuePaths(input).filter((path) => path.endsWith("Name"));
+};
+
 describe(normalizeUaeMobile, () => {
   it.each([
     ["50 123 4567", "+971501234567"],
@@ -160,6 +169,28 @@ describe("lead schema", () => {
     expect(lead.members.self?.passportNumber).toBe("P1234567");
     expect(lead.members.self?.heightCm).toBe(175);
   });
+
+  it.each([
+    ["175", "72.5", []],
+    ["40", "1", []],
+    ["250", "300", []],
+    ["175.5", "72", ["members.self.heightCm"]],
+    ["175", "72.55", ["members.self.weightKg"]],
+    ["39", "0.9", ["members.self.heightCm", "members.self.weightKg"]],
+    ["251", "300.1", ["members.self.heightCm", "members.self.weightKg"]],
+  ])(
+    "height %s cm and weight %s kg → issues %j",
+    (heightCm, weightKg, paths) => {
+      const input = validLead();
+      if (input.members.self) {
+        Object.assign(input.members.self, { heightCm, weightKg });
+      }
+
+      expect(
+        issuePaths(input).filter((path) => /heightCm|weightKg/u.test(path))
+      ).toStrictEqual(paths);
+    }
+  );
 
   it("accepts Family without Self with a sponsor", () => {
     expect(issuePaths(familyOnlyLead())).toStrictEqual([]);
@@ -242,6 +273,21 @@ describe("lead schema", () => {
     }
 
     expect(issuePaths(input)).toContain("members.self.visaFileNumber");
+  });
+
+  it("accepts hyphens and apostrophes inside names", () => {
+    expect(
+      nameIssues("Mary-Jane", "Al-Mansoori", "Abdul Al-Haj")
+    ).toStrictEqual([]);
+    expect(nameIssues("D'Souza", "O’Brien")).toStrictEqual([]);
+    expect(nameIssues("-Ann", "Smith-")).toStrictEqual([
+      "members.self.firstName",
+      "members.self.lastName",
+    ]);
+    expect(nameIssues("Ann", "Al--Haj", "Al '")).toStrictEqual([
+      "members.self.middleName",
+      "members.self.lastName",
+    ]);
   });
 
   describe("category", () => {

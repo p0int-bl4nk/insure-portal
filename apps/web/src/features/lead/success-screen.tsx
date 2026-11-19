@@ -57,7 +57,7 @@ export const SuccessScreen = ({
               </div>
             ))}
           </dl>
-          <p className="text-muted-foreground text-[11px] leading-relaxed">
+          <p className="text-muted-foreground text-xs leading-relaxed">
             Quote this reference if you contact us. You can close this page.
           </p>
         </main>

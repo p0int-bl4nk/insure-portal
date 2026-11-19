@@ -211,8 +211,9 @@ function FieldError({
   }
 
   return (
+    // No role="alert": a failed step would fire one per field. The wizard
+    // announces a single summary and links each error to its control instead.
     <div
-      role="alert"
       data-slot="field-error"
       className={cn("text-destructive text-xs font-normal", className)}
       {...props}

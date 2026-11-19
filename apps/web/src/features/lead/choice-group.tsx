@@ -22,6 +22,7 @@ interface ChoiceGroupProps<T extends string> {
   columns?: number;
   className?: string;
   "aria-labelledby"?: string;
+  "aria-describedby"?: string;
 }
 
 /** Choice options from an option object (e.g. `Gender`), in declaration order. */

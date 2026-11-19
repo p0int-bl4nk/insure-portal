@@ -10,7 +10,7 @@ export const StepHeader = ({ step }: { step: number }) => (
       <div className="lg:hidden">
         <BrandMark />
       </div>
-      <span className="text-muted-foreground text-[11px] lg:ml-auto">
+      <span className="text-muted-foreground text-xs lg:ml-auto">
         STEP {step + 1} / {STEP_COUNT}
       </span>
     </div>

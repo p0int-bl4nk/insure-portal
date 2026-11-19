@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 
 import { ChoiceGroup, optionsFrom, YesNoChoice } from "./choice-group";
 import { DateField } from "./date-field";
+import { describedBy, errorId } from "./form";
 import type { LeadFormValues } from "./form";
 
 export const PolicyStep = () => {
@@ -54,8 +55,12 @@ export const PolicyStep = () => {
                 value={field.value}
                 onChange={field.onChange}
                 invalid={fieldState.invalid}
+                aria-describedby={describedBy(field.name, fieldState.invalid)}
               />
-              <FieldError errors={[fieldState.error]} />
+              <FieldError
+                id={errorId(field.name)}
+                errors={[fieldState.error]}
+              />
             </FieldSet>
           )}
         />
@@ -83,8 +88,12 @@ export const PolicyStep = () => {
                 value={field.value}
                 onChange={field.onChange}
                 invalid={fieldState.invalid}
+                aria-describedby={describedBy(field.name, fieldState.invalid)}
               />
-              <FieldError errors={[fieldState.error]} />
+              <FieldError
+                id={errorId(field.name)}
+                errors={[fieldState.error]}
+              />
             </FieldSet>
           )}
         />
@@ -104,8 +113,12 @@ export const PolicyStep = () => {
                 value={field.value}
                 onChange={field.onChange}
                 invalid={fieldState.invalid}
+                aria-describedby={describedBy(field.name, fieldState.invalid)}
               />
-              <FieldError errors={[fieldState.error]} />
+              <FieldError
+                id={errorId(field.name)}
+                errors={[fieldState.error]}
+              />
             </FieldSet>
           )}
         />
@@ -127,6 +140,7 @@ export const PolicyStep = () => {
               checked={field.value}
               onCheckedChange={field.onChange}
               aria-invalid={fieldState.invalid || undefined}
+              aria-describedby={describedBy(field.name, fieldState.invalid)}
               className="mt-0.5"
             />
 
@@ -134,12 +148,15 @@ export const PolicyStep = () => {
               <FieldLabel htmlFor="consent" className="font-normal">
                 I have read and agree to the following declaration:
               </FieldLabel>
-              <ol className="text-muted-foreground flex list-decimal flex-col gap-2 pl-4 text-[11px] leading-relaxed">
+              <ol className="text-muted-foreground flex list-decimal flex-col gap-2 pl-4 text-xs leading-relaxed">
                 {DECLARATION.map((clause) => (
                   <li key={clause}>{clause}</li>
                 ))}
               </ol>
-              <FieldError errors={[fieldState.error]} />
+              <FieldError
+                id={errorId(field.name)}
+                errors={[fieldState.error]}
+              />
             </div>
           </Field>
         )}

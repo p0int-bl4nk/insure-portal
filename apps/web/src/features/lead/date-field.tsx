@@ -1,5 +1,6 @@
 import { formatIso, toDate, todayInDubai } from "@insure/shared";
 import type { DateWindow } from "@insure/shared";
+import { CalendarBlankIcon } from "@phosphor-icons/react";
 import { cn } from "cn";
 import type { ReactNode } from "react";
 import { Controller, useFormContext } from "react-hook-form";
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
+import { describedBy, errorId } from "./form";
 import type { documentsField, LeadFormValues, memberField } from "./form";
 
 type DatePath =
@@ -52,30 +54,54 @@ export const DateField = ({
           >
             <FieldLabel htmlFor={name}>{label}</FieldLabel>
 
-            <Input
-              id={name}
-              type="date"
-              min={formatIso(from)}
-              max={formatIso(to)}
-              className={cn(
-                "h-10 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-calendar-picker-indicator]:hover:opacity-100",
-                // Match other inputs' placeholder colour until a date is chosen.
-                !date && "text-muted-foreground"
-              )}
-              aria-invalid={fieldState.invalid || undefined}
-              name={field.name}
-              ref={field.ref}
-              value={date ? formatIso(date) : ""}
-              onChange={(event) =>
-                field.onChange(event.target.valueAsDate ?? undefined)
-              }
-              onBlur={field.onBlur}
-            />
+            <div className="relative">
+              <Input
+                id={name}
+                type="date"
+                min={formatIso(from)}
+                max={formatIso(to)}
+                className={cn(
+                  // iOS Safari draws its own control: it ignores the height,
+                  // sizes the width to its content, centres the value and shows
+                  // no calendar icon. Drop the native look so it matches the
+                  // other inputs, and draw the icon ourselves.
+                  "relative h-10 appearance-none pr-9 text-left",
+                  "[&::-webkit-date-and-time-value]:m-0 [&::-webkit-date-and-time-value]:min-h-[1.5em] [&::-webkit-date-and-time-value]:text-left",
+                  // Chrome/Edge: stretch the invisible native picker button over
+                  // the whole field, so a click anywhere opens the calendar.
+                  "[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:size-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0",
+                  // Match other inputs' placeholder colour until a date is chosen.
+                  !date && "text-muted-foreground"
+                )}
+                aria-invalid={fieldState.invalid || undefined}
+                aria-describedby={describedBy(
+                  name,
+                  fieldState.invalid,
+                  description ? `${name}-hint` : undefined
+                )}
+                name={field.name}
+                ref={field.ref}
+                value={date ? formatIso(date) : ""}
+                onChange={(event) =>
+                  field.onChange(event.target.valueAsDate ?? undefined)
+                }
+                onBlur={field.onBlur}
+              />
+              {/* Firefox shows its own calendar button. */}
+              <CalendarBlankIcon
+                aria-hidden="true"
+                className="text-muted-foreground pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 supports-[-moz-appearance:none]:hidden"
+              />
+            </div>
 
             {fieldState.error ? (
-              <FieldError errors={[fieldState.error]} />
+              <FieldError id={errorId(name)} errors={[fieldState.error]} />
             ) : (
-              description && <FieldDescription>{description}</FieldDescription>
+              description && (
+                <FieldDescription id={`${name}-hint`}>
+                  {description}
+                </FieldDescription>
+              )
             )}
           </Field>
         );

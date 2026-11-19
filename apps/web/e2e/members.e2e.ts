@@ -66,7 +66,9 @@ test("a new member's tab opens without errors", async ({ page }) => {
   for (const tab of ["Self", "Child 1", "Child 2"]) {
     await memberTab(page, tab).click();
     await expect(page.getByRole("tab", { name: /has errors/u })).toHaveCount(0);
-    await expect(page.getByRole("tabpanel").getByRole("alert")).toHaveCount(0);
+    await expect(
+      page.getByRole("tabpanel").locator("[data-slot=field-error]")
+    ).toHaveCount(0);
   }
 });
 
@@ -111,7 +113,9 @@ test("rejects values in the wrong format", async ({ page }) => {
   await continueButton(page).click();
 
   const panel = page.getByRole("tabpanel");
-  await expect(panel.getByText("Use letters only.")).toBeVisible();
+  await expect(
+    panel.getByText("Use letters, hyphens or apostrophes only.")
+  ).toBeVisible();
   await expect(
     panel.getByText("Use the format 201/2020/1234567.")
   ).toBeVisible();
@@ -120,12 +124,30 @@ test("rejects values in the wrong format", async ({ page }) => {
   ).toBeVisible();
   await expect(panel.getByText("Use 5–20 letters and digits.")).toBeVisible();
   await expect(
-    panel.getByText("Enter the height in cm from 30 to 250.")
+    panel.getByText("Enter the height in cm from 40 to 250.")
   ).toBeVisible();
   await expect(
     panel.getByText("Enter the weight in kg from 1 to 300.")
   ).toBeVisible();
   await expect(heading(page)).toHaveText("Member details");
+});
+
+test("accepts hyphenated names and formats the visa file number", async ({
+  page,
+}) => {
+  await reachMembers(page, "Self Only");
+  await fillMember(page, { ...SELF, visaFileNumber: "20120201234567" });
+  await field(page, "Last name").fill("Al-Mansoori");
+  await expect(field(page, "Visa file number")).toHaveValue("201/2020/1234567");
+
+  await field(page, "Visa file number").fill("201.2020.1.1234567");
+  await expect(field(page, "Visa file number")).toHaveValue(
+    "201/2020/1/1234567"
+  );
+
+  await field(page, "Weight (kg)").fill("3.4");
+  await continueButton(page).click();
+  await expect(heading(page)).toHaveText("Health details");
 });
 
 test("checks ages against the member's relation", async ({ page }) => {
