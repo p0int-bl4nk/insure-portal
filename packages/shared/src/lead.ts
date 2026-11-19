@@ -11,6 +11,7 @@ import {
   IncomeRange,
   MaritalStatus,
   MAX_CHILDREN,
+  MEASUREMENTS,
   Occupation,
   Relation,
   SELF_CATEGORIES,
@@ -21,9 +22,16 @@ const EMIRATES_ID = /^784\d{12}$/u;
 const VISA_FILE_NUMBER = /^\d{3}\/\d{4}(?:\/\d)?\/\d{2,7}$/u;
 const PASSPORT_NUMBER = /^[A-Z0-9]{5,20}$/u;
 
-// Name rules as the insurer forms define them.
-const SINGLE_NAME = /^(?=.{2,40}$)[a-zA-Z]+\.?$/u;
-const MIDDLE_NAME = /^(?=.{1,100}$)[a-zA-Z]*(?:[a-zA-Z-]+\.? )*?[a-zA-Z]+\.?$/u;
+// Name rules as the insurer forms define them, plus hyphens and apostrophes
+// inside a name ("Al-Mansoori", "O'Brien").
+const NAME_WORD = String.raw`[a-zA-Z]+(?:['’-][a-zA-Z]+)*\.?`;
+const SINGLE_NAME = new RegExp(`^(?=.{2,40}$)${NAME_WORD}$`, "u");
+const MIDDLE_NAME = new RegExp(
+  `^(?=.{1,100}$)${NAME_WORD}(?: ${NAME_WORD})*$`,
+  "u"
+);
+
+const NAME_FORMAT = "Use letters, hyphens or apostrophes only.";
 
 const ADULT_AGE = 18;
 const PREGNANCY_MAX_AGE = 55;
@@ -93,16 +101,27 @@ const dateWithin = (window: DateWindow, message: string) =>
   }, message);
 
 /** Whole number from a text input; "" fails as missing rather than 0. */
-const wholeNumber = (min: number, max: number, label: string) =>
-  z.preprocess(
+/** A number typed into a text box, within limits and to `step` precision (1 or 0.1). */
+const measurement = (
+  { min, max, step }: { min: number; max: number; step: number },
+  label: string
+) => {
+  const decimals = step < 1 ? 1 : 0;
+
+  return z.preprocess(
     (value) =>
       typeof value === "string" && value.trim() === "" ? undefined : value,
     z.coerce
       .number<unknown>(`Enter ${label}.`)
-      .int("Enter a whole number.")
+      .refine(
+        // Compare at the step's precision: 72.5 / 0.1 isn't exactly 725 in floats.
+        (value) => Number(value.toFixed(decimals)) === value,
+        decimals ? "Use at most 1 decimal place." : "Enter a whole number."
+      )
       .min(min, `Enter ${label} from ${min} to ${max}.`)
       .max(max, `Enter ${label} from ${min} to ${max}.`)
   );
+};
 
 // `.optional().pipe(required)`: optional in the input type so the form can start blank,
 // required in the parsed output with the message shown when it's missing.
@@ -117,7 +136,7 @@ const nationality = z
 const middleName = z
   .string()
   .trim()
-  .regex(MIDDLE_NAME, "Use letters, spaces or hyphens only.")
+  .regex(MIDDLE_NAME, "Use letters, spaces, hyphens or apostrophes only.")
   .or(z.literal(""))
   .optional()
   .transform((value) => value || undefined);
@@ -137,9 +156,9 @@ const emiratesId = z.string().transform((value, ctx) => {
 });
 
 const nameFields = {
-  firstName: text(SINGLE_NAME, "Enter the first name.", "Use letters only."),
+  firstName: text(SINGLE_NAME, "Enter the first name.", NAME_FORMAT),
   middleName,
-  lastName: text(SINGLE_NAME, "Enter the last name.", "Use letters only."),
+  lastName: text(SINGLE_NAME, "Enter the last name.", NAME_FORMAT),
 };
 
 export const contactSchema = z
@@ -232,8 +251,8 @@ const personFields = (relation: Relation) => ({
     .trim()
     .toUpperCase()
     .regex(PASSPORT_NUMBER, "Use 5–20 letters and digits."),
-  heightCm: wholeNumber(30, 250, "the height in cm"),
-  weightKg: wholeNumber(1, 300, "the weight in kg"),
+  heightCm: measurement(MEASUREMENTS.heightCm, "the height in cm"),
+  weightKg: measurement(MEASUREMENTS.weightKg, "the weight in kg"),
   conditions,
   // Asked on the health step when they apply, and required there by the rules below.
   smoker: z.boolean().optional(),

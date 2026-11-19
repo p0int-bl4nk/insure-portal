@@ -115,6 +115,9 @@ test("Yes to conditions needs at least one ticked", async ({ page }) => {
   await expect(heading(page)).toHaveText("Health details");
 
   await page.getByRole("checkbox", { name: "Thyroid" }).check();
+  await expect(
+    page.getByText("Select at least one condition, or answer No.")
+  ).toBeHidden();
   await continueButton(page).click();
   await expect(heading(page)).toHaveText("Your policy");
 });

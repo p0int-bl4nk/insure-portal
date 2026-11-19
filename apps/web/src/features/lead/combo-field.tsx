@@ -16,6 +16,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 
 import { optionsFrom } from "./choice-group";
 import type { Option } from "./choice-group";
+import { describedBy, errorId } from "./form";
 import type { LeadFormValues } from "./form";
 
 interface ComboFieldProps<T extends string> {
@@ -60,6 +61,7 @@ export const ComboField = <T extends string>({
               autoComplete="off"
               className="h-10 w-full"
               aria-invalid={fieldState.invalid || undefined}
+              aria-describedby={describedBy(field.name, fieldState.invalid)}
               onBlur={field.onBlur}
             />
             <ComboboxContent>
@@ -74,7 +76,7 @@ export const ComboField = <T extends string>({
             </ComboboxContent>
           </Combobox>
 
-          <FieldError errors={[fieldState.error]} />
+          <FieldError id={errorId(field.name)} errors={[fieldState.error]} />
         </Field>
       )}
     />

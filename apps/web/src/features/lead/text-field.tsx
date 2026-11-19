@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
+import { describedBy, errorId } from "./form";
 import type { LeadFormValues, memberField } from "./form";
 
 /** Text fields, plus height and weight (typed as `unknown` until parsed). */
@@ -61,6 +62,11 @@ export const TextField = ({
             id={name}
             className="h-10"
             aria-invalid={fieldState.invalid || undefined}
+            aria-describedby={describedBy(
+              name,
+              fieldState.invalid,
+              description ? `${name}-hint` : undefined
+            )}
             name={field.name}
             ref={field.ref}
             value={String(field.value ?? "")}
@@ -74,9 +80,13 @@ export const TextField = ({
           />
 
           {fieldState.error ? (
-            <FieldError errors={[fieldState.error]} />
+            <FieldError id={errorId(name)} errors={[fieldState.error]} />
           ) : (
-            description && <FieldDescription>{description}</FieldDescription>
+            description && (
+              <FieldDescription id={`${name}-hint`}>
+                {description}
+              </FieldDescription>
+            )
           )}
         </Field>
       )}

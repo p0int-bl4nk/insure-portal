@@ -38,6 +38,18 @@ test.describe("Cover step", () => {
     });
   }
 
+  test("the family member error clears once one is chosen", async ({
+    page,
+  }) => {
+    await chooseCover(page, "Both Self and Family");
+    await continueButton(page).click();
+    const error = page.getByText("Choose at least one family member.");
+    await expect(error).toBeVisible();
+
+    await page.getByRole("button", { name: "Spouse", exact: true }).click();
+    await expect(error).toBeHidden();
+  });
+
   test("asks about family only for the family categories", async ({ page }) => {
     await chooseCover(page, "Self Only");
     await expect(page.getByText(/Who (?:else )?is covered\?/u)).toHaveCount(0);
@@ -145,6 +157,27 @@ test.describe("Contact step", () => {
     await fillContact(page);
     await continueButton(page).click();
     await expect(heading(page)).toHaveText("Member details");
+  });
+
+  test("moves focus to the first error, then to the next step's heading", async ({
+    page,
+  }) => {
+    await start(page);
+    await chooseCover(page, "Self Only");
+    await continueButton(page).click();
+    await expect(heading(page)).toBeFocused();
+
+    await continueButton(page).click();
+    await expect(field(page, "Mobile number")).toBeFocused();
+    await expect(field(page, "Mobile number")).toHaveAccessibleDescription(
+      "Enter a UAE mobile number starting with 5, e.g. 50 123 4567."
+    );
+    await expect(page.getByText("2 answers need attention.")).toBeAttached();
+
+    await fillContact(page);
+    await continueButton(page).click();
+    await expect(heading(page)).toHaveText("Member details");
+    await expect(heading(page)).toBeFocused();
   });
 
   test("formats the mobile as it's typed, dropping a pasted prefix", async ({

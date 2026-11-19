@@ -178,3 +178,13 @@ export const summarizeConditions = (
 
   return rest > 0 ? `${names.join(", ")} and ${rest} more` : names.join(", ");
 };
+
+/** Id of a field's error message, so its control can point at it. */
+export const errorId = (name: string) => `${name}-error`;
+
+/** aria-describedby for a control: its error while it has one, else its hint. */
+export const describedBy = (
+  name: string,
+  invalid: boolean,
+  hintId?: string
+): string | undefined => (invalid ? errorId(name) : hintId);

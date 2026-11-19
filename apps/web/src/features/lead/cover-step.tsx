@@ -30,7 +30,7 @@ import {
 import { Toggle } from "@/components/ui/toggle";
 
 import { ChoiceGroup } from "./choice-group";
-import { newMember } from "./form";
+import { describedBy, errorId, newMember } from "./form";
 import type { LeadFormValues } from "./form";
 
 const CATEGORY_ICONS: Record<Category, Icon> = {
@@ -60,14 +60,27 @@ const SINGLE_RELATIONS = [
 ] as const;
 
 export const CoverStep = () => {
-  const { control, setValue } = useFormContext<LeadFormValues>();
+  const { control, setValue, clearErrors } = useFormContext<LeadFormValues>();
 
   const children = useFieldArray({ control, name: "members.children" });
   const category = useWatch({ control, name: "category" });
   const members = useWatch({ control, name: "members" });
   const childCount = members?.children?.length ?? 0;
 
-  const addChild = () => children.append(newMember());
+  // Who's covered is checked as part of "category". Clear its error on any
+  // change instead of re-checking: members only fit the category once
+  // Continue applies it, so a re-check here could show a false error.
+  const recheckCategory = () => clearErrors("category");
+
+  const addChild = () => {
+    children.append(newMember());
+    recheckCategory();
+  };
+
+  const removeChildren = (index?: number) => {
+    children.remove(index);
+    recheckCategory();
+  };
 
   return (
     <FieldGroup>
@@ -84,11 +97,15 @@ export const CoverStep = () => {
               options={CATEGORY_OPTIONS}
               columns={1}
               value={field.value}
-              onChange={field.onChange}
+              onChange={(picked) => {
+                field.onChange(picked);
+                recheckCategory();
+              }}
               invalid={fieldState.invalid}
+              aria-describedby={describedBy(field.name, fieldState.invalid)}
               className="md:grid-cols-3!"
             />
-            <FieldError errors={[fieldState.error]} />
+            <FieldError id={errorId(field.name)} errors={[fieldState.error]} />
           </FieldSet>
         )}
       />
@@ -111,12 +128,13 @@ export const CoverStep = () => {
                   variant="choice"
                   size="touch"
                   pressed={pressed}
-                  onPressedChange={(on) =>
+                  onPressedChange={(on) => {
                     setValue(
                       `members.${relation}`,
                       on ? newMember() : undefined
-                    )
-                  }
+                    );
+                    recheckCategory();
+                  }}
                   className="h-11 justify-start gap-2"
                 >
                   {pressed ? (
@@ -133,7 +151,7 @@ export const CoverStep = () => {
               variant="choice"
               size="touch"
               pressed={childCount > 0}
-              onPressedChange={(on) => (on ? addChild() : children.remove())}
+              onPressedChange={(on) => (on ? addChild() : removeChildren())}
               className="h-11 justify-start gap-2"
             >
               {childCount > 0 ? (
@@ -159,7 +177,7 @@ export const CoverStep = () => {
                   variant="ghost"
                   size="icon"
                   aria-label="Remove a child"
-                  onClick={() => children.remove(childCount - 1)}
+                  onClick={() => removeChildren(childCount - 1)}
                 >
                   <MinusIcon />
                 </Button>

@@ -4,6 +4,7 @@ import {
   GENDER_LABELS,
   MaritalStatus,
   MARITAL_STATUS_LABELS,
+  MEASUREMENTS,
   Relation,
 } from "@insure/shared";
 import { CheckIcon } from "@phosphor-icons/react";
@@ -17,14 +18,16 @@ import {
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field";
-import { formatEmiratesIdInput } from "@/lib/utils";
+import { formatEmiratesIdInput, formatVisaFileInput } from "@/lib/utils";
 
 import { ChoiceGroup, optionsFrom, YesNoChoice } from "./choice-group";
 import { EmirateField, NationalityField } from "./combo-field";
 import { DateField } from "./date-field";
 import {
+  describedBy,
   detailFields,
   documentsField,
+  errorId,
   formMembers,
   genderField,
   maritalStatusField,
@@ -46,7 +49,7 @@ const PARENT_MARITAL_OPTIONS = MARITAL_OPTIONS.filter(
 const FixedValue = ({ label, value }: { label: string; value: string }) => (
   <Field className="min-w-0">
     <FieldLabel className="text-muted-foreground">{label}</FieldLabel>
-    <div className="border-input bg-muted/50 text-muted-foreground flex h-10 items-center border px-2.5 text-xs">
+    <div className="border-input bg-muted/50 text-muted-foreground flex h-10 items-center border px-2.5 text-base md:text-sm">
       {value}
     </div>
   </Field>
@@ -88,9 +91,10 @@ const MemberDetails = ({
               value={field.value}
               onChange={field.onChange}
               invalid={fieldState.invalid}
+              aria-describedby={describedBy(field.name, fieldState.invalid)}
               className="w-40"
             />
-            <FieldError errors={[fieldState.error]} />
+            <FieldError id={errorId(field.name)} errors={[fieldState.error]} />
           </FieldSet>
         )}
       />
@@ -128,8 +132,12 @@ const MemberDetails = ({
                   value={field.value}
                   onChange={field.onChange}
                   invalid={fieldState.invalid}
+                  aria-describedby={describedBy(field.name, fieldState.invalid)}
                 />
-                <FieldError errors={[fieldState.error]} />
+                <FieldError
+                  id={errorId(field.name)}
+                  errors={[fieldState.error]}
+                />
               </FieldSet>
             )}
           />
@@ -163,8 +171,12 @@ const MemberDetails = ({
                   value={field.value}
                   onChange={field.onChange}
                   invalid={fieldState.invalid}
+                  aria-describedby={describedBy(field.name, fieldState.invalid)}
                 />
-                <FieldError errors={[fieldState.error]} />
+                <FieldError
+                  id={errorId(field.name)}
+                  errors={[fieldState.error]}
+                />
               </FieldSet>
             )}
           />
@@ -194,7 +206,10 @@ const MemberDetails = ({
         <TextField
           name={memberField(path, "visaFileNumber")}
           label="Visa file number"
-          placeholder="201/2020/1234567"
+          description="e.g. 201/2020/1234567. For a 4-part number, type . after the single digit."
+          // Decimal keypads have a "." for the optional one-digit part.
+          inputMode="decimal"
+          format={formatVisaFileInput}
         />
       </div>
 
@@ -233,14 +248,16 @@ const MemberDetails = ({
         <TextField
           name={memberField(path, "heightCm")}
           label="Height (cm)"
+          type="number"
           inputMode="numeric"
-          maxLength={3}
+          {...MEASUREMENTS.heightCm}
         />
         <TextField
           name={memberField(path, "weightKg")}
           label="Weight (kg)"
-          inputMode="numeric"
-          maxLength={3}
+          type="number"
+          inputMode="decimal"
+          {...MEASUREMENTS.weightKg}
         />
       </div>
     </div>

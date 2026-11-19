@@ -16,6 +16,8 @@ import { Separator } from "@/components/ui/separator";
 
 import { YesNoChoice } from "./choice-group";
 import {
+  describedBy,
+  errorId,
   formMembers,
   memberEligibility,
   memberField,
@@ -44,6 +46,9 @@ export const HealthStep = () => {
     control,
     setValue,
     getValues,
+    getFieldState,
+    trigger,
+    clearErrors,
     formState: { errors },
   } = useFormContext<LeadFormValues>();
 
@@ -84,6 +89,15 @@ export const HealthStep = () => {
   const clearConditions = () => {
     for (const { path } of formMembers(getValues("members"))) {
       setValue(memberField(path, "conditions"), [], { shouldDirty: true });
+      clearErrors(memberField(path, "conditions"));
+    }
+  };
+
+  // "Select at least one condition" sits on hasPed, so ticking one has to
+  // re-check it; otherwise the error stays until hasPed itself changes.
+  const recheckHasPed = () => {
+    if (getFieldState("hasPed").invalid) {
+      void trigger("hasPed");
     }
   };
 
@@ -110,11 +124,13 @@ export const HealthStep = () => {
                 if (!yes) {
                   clearConditions();
                 }
+                recheckHasPed();
               }}
               invalid={fieldState.invalid}
+              aria-describedby={describedBy(field.name, fieldState.invalid)}
             />
 
-            <FieldError errors={[fieldState.error]} />
+            <FieldError id={errorId(field.name)} errors={[fieldState.error]} />
           </FieldSet>
         )}
       />
@@ -176,13 +192,14 @@ export const HealthStep = () => {
                                 <Checkbox
                                   id={id}
                                   checked={value.includes(condition)}
-                                  onCheckedChange={(checked) =>
+                                  onCheckedChange={(checked) => {
                                     field.onChange(
                                       checked
                                         ? [...value, condition]
                                         : value.filter((c) => c !== condition)
-                                    )
-                                  }
+                                    );
+                                    recheckHasPed();
+                                  }}
                                 />
                                 <FieldLabel
                                   htmlFor={id}
@@ -240,11 +257,18 @@ export const HealthStep = () => {
                         value={field.value}
                         onChange={field.onChange}
                         invalid={fieldState.invalid}
+                        aria-describedby={describedBy(
+                          field.name,
+                          fieldState.invalid
+                        )}
                         className="w-28 shrink-0"
                       />
                     </div>
 
-                    <FieldError errors={[fieldState.error]} />
+                    <FieldError
+                      id={errorId(field.name)}
+                      errors={[fieldState.error]}
+                    />
                   </Field>
                 )}
               />

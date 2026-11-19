@@ -108,6 +108,9 @@ const formatUaeMobile = (mobile: string) => {
 
 const scrollTop = () => window.scrollTo({ top: 0 });
 
+/** Where focus goes once the next render lands. */
+type FocusTarget = "heading" | "firstError" | "submitError";
+
 const SubmitLabel = ({
   submitting,
   isLast,
@@ -155,10 +158,19 @@ export const LeadWizard = () => {
   const [tokenMissing, setTokenMissing] = useState(false);
   const [submitError, setSubmitError] = useState<SubmitError | null>(null);
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
+  // Wrapped in an object so asking for the same target again still refocuses.
+  const [focusRequest, setFocusRequest] = useState<{ to: FocusTarget } | null>(
+    null
+  );
+  /** Read out by screen readers when a step's checks fail. */
+  const [announcement, setAnnouncement] = useState("");
 
   const startedAt = useRef(0);
   const honeypot = useRef<HTMLInputElement>(null);
   const turnstile = useRef<TurnstileInstance>(null);
+  const main = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const submitAlert = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     startedAt.current = Date.now();
@@ -181,10 +193,51 @@ export const LeadWizard = () => {
     formState,
   } = form;
 
+  const focus = (to: FocusTarget) => setFocusRequest({ to });
+
+  // Runs after the render that shows the new step, tab or errors, so the
+  // target exists (e.g. an invalid field on a member tab that just opened).
+  useEffect(() => {
+    if (!focusRequest) {
+      return;
+    }
+
+    if (focusRequest.to === "heading") {
+      heading.current?.focus({ preventScroll: true });
+      return;
+    }
+
+    if (focusRequest.to === "submitError") {
+      submitAlert.current?.scrollIntoView({ block: "center" });
+      submitAlert.current?.focus({ preventScroll: true });
+      return;
+    }
+
+    const errors =
+      main.current?.querySelectorAll('[data-slot="field-error"]').length ?? 0;
+    setAnnouncement(
+      errors === 1
+        ? "1 answer needs attention."
+        : `${errors} answers need attention.`
+    );
+
+    const invalid = main.current?.querySelector<HTMLElement>(
+      '[aria-invalid="true"]'
+    );
+    // Centred, so the sticky footer on mobile doesn't cover it.
+    invalid?.scrollIntoView({ block: "center" });
+    invalid?.focus({ preventScroll: true });
+  }, [focusRequest]);
+
   const goTo = (next: number) => {
     setStep(next);
+    setAnnouncement("");
     scrollTop();
+    focus("heading");
   };
+
+  /** Shows the first error of a failed check and says how many there are. */
+  const showErrors = () => focus("firstError");
 
   const members = formMembers(
     useWatch({ control: form.control, name: "members" })
@@ -227,7 +280,11 @@ export const LeadWizard = () => {
       if (await trigger(detailFields(current))) {
         setCheckedTabs((done) => new Set(done).add(current.path.join(".")));
         setMemberTab(tab + 1);
+        setAnnouncement("");
         scrollTop();
+        focus("heading");
+      } else {
+        showErrors();
       }
       return false;
     }
@@ -241,7 +298,7 @@ export const LeadWizard = () => {
       detailFields(entry).some((name) => getFieldState(name).invalid)
     );
     setMemberTab(Math.max(firstInvalid, 0));
-    scrollTop();
+    showErrors();
     return false;
   };
 
@@ -250,6 +307,7 @@ export const LeadWizard = () => {
       case Step.Cover: {
         applyCategory();
         if (!(await trigger("category"))) {
+          showErrors();
           return;
         }
         clearErrors("members.children");
@@ -259,6 +317,7 @@ export const LeadWizard = () => {
 
       case Step.Contact: {
         if (!(await trigger(["contact", "sponsor"]))) {
+          showErrors();
           return;
         }
         break;
@@ -274,6 +333,7 @@ export const LeadWizard = () => {
 
       case Step.Health: {
         if (!(await trigger(["hasPed", "members"]))) {
+          showErrors();
           return;
         }
         break;
@@ -307,7 +367,7 @@ export const LeadWizard = () => {
     turnstile.current?.reset();
     setToken(null);
     setSubmitError(result.error);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    focus("submitError");
   };
 
   if (submitted) {
@@ -334,7 +394,7 @@ export const LeadWizard = () => {
 
   const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     if (isLast) {
-      return handleSubmit(onSubmit)(event);
+      return handleSubmit(onSubmit, showErrors)(event);
     }
     event.preventDefault();
     return next();
@@ -350,9 +410,21 @@ export const LeadWizard = () => {
         >
           <StepHeader step={step} />
 
-          <main className="flex flex-1 flex-col gap-6 px-5 pt-7 pb-6 md:px-8 md:pt-8 md:pb-8">
+          <main
+            ref={main}
+            className="flex flex-1 flex-col gap-6 px-5 pt-7 pb-6 md:px-8 md:pt-8 md:pb-8"
+          >
+            <p className="sr-only" aria-live="polite">
+              {announcement}
+            </p>
+
             {isLast && submitError && (
-              <Alert variant="destructive">
+              <Alert
+                ref={submitAlert}
+                tabIndex={-1}
+                variant="destructive"
+                className="outline-none"
+              >
                 <WarningCircleIcon />
                 <AlertTitle>{SUBMIT_ERRORS[submitError].title}</AlertTitle>
                 <AlertDescription>
@@ -362,10 +434,14 @@ export const LeadWizard = () => {
             )}
 
             <div className="flex flex-col gap-1.5">
-              <h1 className="text-xl font-semibold tracking-tight">
+              <h1
+                ref={heading}
+                tabIndex={-1}
+                className="text-xl font-semibold tracking-tight outline-none"
+              >
                 {current.title}
               </h1>
-              <p className="text-muted-foreground text-xs leading-relaxed">
+              <p className="text-muted-foreground text-sm leading-relaxed">
                 {current.intro}
               </p>
             </div>
@@ -395,7 +471,9 @@ export const LeadWizard = () => {
                   onError={() => setToken(null)}
                 />
                 {tokenMissing && (
-                  <FieldError>Complete the check to continue.</FieldError>
+                  <FieldError role="alert">
+                    Complete the check to continue.
+                  </FieldError>
                 )}
               </div>
             )}
@@ -423,6 +501,7 @@ export const LeadWizard = () => {
                   if (step === Step.Members && tab > 0) {
                     setMemberTab(tab - 1);
                     scrollTop();
+                    focus("heading");
                     return;
                   }
                   goTo(step - 1);

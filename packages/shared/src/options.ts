@@ -149,6 +149,12 @@ export const CONDITION_LABELS: Record<Condition, string> = {
 
 export const MAX_CHILDREN = 4;
 
+/** Allowed height and weight, newborn to adult. `step` is the finest unit accepted. */
+export const MEASUREMENTS = {
+  heightCm: { min: 40, max: 250, step: 1 },
+  weightKg: { min: 1, max: 300, step: 0.1 },
+} as const;
+
 export const AGE_LIMITS: Record<Relation, { min: number; max: number }> = {
   [Relation.Self]: { min: 18, max: 99 },
   [Relation.Spouse]: { min: 18, max: 99 },
