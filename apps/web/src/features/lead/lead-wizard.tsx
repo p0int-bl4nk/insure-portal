@@ -177,6 +177,7 @@ export const LeadWizard = () => {
     trigger,
     getValues,
     setValue,
+    clearErrors,
     getFieldState,
     formState,
   } = form;
@@ -258,6 +259,7 @@ export const LeadWizard = () => {
         if (!(await trigger("category"))) {
           return;
         }
+        clearErrors("members.children");
         setMemberTab(0);
         break;
       }
