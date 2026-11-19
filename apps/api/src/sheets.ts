@@ -7,9 +7,22 @@ import type { ServiceAccount } from "./secrets.ts";
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
+const SHEET_URL = /\/spreadsheets\/d\/(?<id>[\w-]+)/u;
+const SHEET_ID = /^[\w-]{20,}$/u;
+
 const sheetEnvSchema = z
   .object({
-    SPREADSHEET_ID: z.string().min(1, "SPREADSHEET_ID is not set"),
+    // Accepts the bare ID or a pasted Sheet URL (…/spreadsheets/d/<id>/edit…).
+    SPREADSHEET_ID: z
+      .string()
+      .trim()
+      .min(1, "SPREADSHEET_ID is not set")
+      .transform((value) => value.match(SHEET_URL)?.groups?.id ?? value)
+      .pipe(
+        z
+          .string()
+          .regex(SHEET_ID, "SPREADSHEET_ID must be the Sheet ID from its URL")
+      ),
     SHEET_LEADS_TAB: z.string().min(1).default("Leads"),
     SHEET_MEMBERS_TAB: z.string().min(1).default("Members"),
   })
@@ -21,8 +34,9 @@ const sheetEnvSchema = z
 
 export type SheetConfig = z.output<typeof sheetEnvSchema>;
 
-export const sheetConfigFromEnv = (): SheetConfig =>
-  sheetEnvSchema.parse(process.env);
+export const sheetConfigFromEnv = (
+  env: Record<string, string | undefined> = process.env
+): SheetConfig => sheetEnvSchema.parse(env);
 
 /** The part of the spreadsheet metadata response we read. */
 const tabsSchema = z
@@ -37,6 +51,57 @@ const tabsSchema = z
     ({ sheets }) =>
       new Map(sheets.map((s) => [s.properties.title, s.properties.sheetId]))
   );
+
+/**
+ * Google's error type, e.g. "INVALID_ARGUMENT" or "PERMISSION_DENIED". Only the
+ * status code is kept: the message text can echo submitted cell values.
+ */
+const googleErrorSchema = z
+  .object({ error: z.object({ status: z.string() }) })
+  .transform(({ error }) => error.status)
+  .catch("UNKNOWN");
+
+/** New tabs get Google's default 26 columns (A–Z) unless asked for more. */
+const DEFAULT_COLUMN_COUNT = 26;
+
+const columnCountsSchema = z
+  .object({
+    sheets: z.array(
+      z.object({
+        properties: z.object({
+          title: z.string(),
+          gridProperties: z.object({ columnCount: z.number() }),
+        }),
+      })
+    ),
+  })
+  .transform(
+    ({ sheets }) =>
+      new Map(
+        sheets.map((s) => [
+          s.properties.title,
+          s.properties.gridProperties.columnCount,
+        ])
+      )
+  );
+
+/** An appendDimension request when a tab has fewer columns than needed. */
+const widen = (
+  sheetId: number | undefined,
+  columnCount: number | undefined,
+  needed: number
+) =>
+  sheetId !== undefined && columnCount !== undefined && columnCount < needed
+    ? [
+        {
+          appendDimension: {
+            sheetId,
+            dimension: "COLUMNS",
+            length: needed - columnCount,
+          },
+        },
+      ]
+    : [];
 
 /** Literal cell values only: strings are never parsed as formulas. */
 const toRow = (cells: Cell[]) => ({
@@ -75,8 +140,10 @@ export class SheetsClient {
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
-      // Google error bodies describe the request, not the row data, so the status is enough to log.
-      throw new Error(`Sheets API ${res.status}`);
+      const reason = googleErrorSchema.parse(
+        await res.json().catch(() => null)
+      );
+      throw new Error(`Sheets API ${res.status} ${reason}`);
     }
     return response.parse(await res.json());
   }
@@ -99,6 +166,8 @@ export class SheetsClient {
     const ids = await this.tabIds();
     const id = ids.get(title);
     if (id === undefined) {
+      // Look the tabs up again next time, in case someone adds the tab meanwhile.
+      this.#tabIds = undefined;
       throw new Error(`Sheet tab "${title}" not found`);
     }
     return id;
@@ -150,17 +219,33 @@ export class SheetsClient {
         method: "POST",
         body: JSON.stringify({
           requests: missing.map((title) => ({
-            addSheet: { properties: { title } },
+            addSheet: {
+              properties: {
+                title,
+                gridProperties: {
+                  columnCount: Math.max(
+                    DEFAULT_COLUMN_COUNT,
+                    headers[title]?.length ?? 0
+                  ),
+                },
+              },
+            },
           })),
         }),
       });
       this.#tabIds = undefined;
     }
     const ids = await this.tabIds();
+    // Tabs created earlier (or by hand) may be narrower than the header row.
+    const columnCounts = await this.#request(
+      "?fields=sheets.properties(title,gridProperties.columnCount)",
+      columnCountsSchema
+    );
     await this.#request(":batchUpdate", z.unknown(), {
       method: "POST",
       body: JSON.stringify({
         requests: Object.entries(headers).flatMap(([title, row]) => [
+          ...widen(ids.get(title), columnCounts.get(title), row.length),
           {
             updateCells: {
               start: { sheetId: ids.get(title), rowIndex: 0, columnIndex: 0 },
