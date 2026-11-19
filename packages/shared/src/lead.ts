@@ -4,6 +4,7 @@ import { COUNTRY_CODES } from "./countries.ts";
 import { addDays, addYears, ageFromDob, todayInDubai } from "./dates.ts";
 import {
   AGE_LIMITS,
+  Category,
   Condition,
   Emirate,
   Gender,
@@ -12,6 +13,7 @@ import {
   MAX_CHILDREN,
   Occupation,
   Relation,
+  SELF_CATEGORIES,
 } from "./options.ts";
 
 const UAE_MOBILE = /^(?:\+?971|00971|0)?(?<local>5[024568]\d{7})$/u;
@@ -48,19 +50,36 @@ const text = (pattern: RegExp, required: string, invalid: string) =>
 
 export type DateWindow = (today: Date) => { from: Date; to: Date };
 
+/** Dates of birth that give an age within the relation's limits. */
+const dateOfBirthWindow =
+  (relation: Relation): DateWindow =>
+  (today) => ({
+    from: addDays(addYears(today, -(AGE_LIMITS[relation].max + 1)), 1),
+    to: addYears(today, -AGE_LIMITS[relation].min),
+  });
+
 /** Allowed date ranges, relative to today in Dubai. The form's calendars use these too. */
 export const DATE_WINDOWS = {
-  dateOfBirth: (today) => ({
-    from: addDays(addYears(today, -(AGE_LIMITS.self.max + 1)), 1),
-    to: addYears(today, -AGE_LIMITS.self.min),
-  }),
-  policyStart: (today) => ({ from: today, to: addDays(today, 30) }),
-  previousPolicyExpiry: (today) => ({
+  dateOfBirth: {
+    [Relation.Self]: dateOfBirthWindow(Relation.Self),
+    [Relation.Spouse]: dateOfBirthWindow(Relation.Spouse),
+    [Relation.Child]: dateOfBirthWindow(Relation.Child),
+    [Relation.Father]: dateOfBirthWindow(Relation.Father),
+    [Relation.Mother]: dateOfBirthWindow(Relation.Mother),
+  } satisfies Record<Relation, DateWindow>,
+  policyStart: ((today) => ({
+    from: today,
+    to: addDays(today, 30),
+  })) satisfies DateWindow,
+  previousPolicyExpiry: ((today) => ({
     from: addYears(today, -10),
     to: addYears(today, 2),
-  }),
-  emiratesIdExpiry: (today) => ({ from: today, to: addDays(today, 3650) }),
-} satisfies Record<string, DateWindow>;
+  })) satisfies DateWindow,
+  emiratesIdExpiry: ((today) => ({
+    from: today,
+    to: addDays(today, 3650),
+  })) satisfies DateWindow,
+};
 
 /**
  * A date within a window relative to today (Dubai). Accepts a Date from the form or
@@ -90,29 +109,41 @@ const wholeNumber = (min: number, max: number, label: string) =>
 const choice = <T extends Record<string, string>>(values: T, message: string) =>
   z.enum(values).optional().pipe(z.enum(values, message));
 
-const answer = z.boolean().optional().pipe(z.boolean(answerThis));
+const nationality = z
+  .enum(COUNTRY_CODES)
+  .optional()
+  .pipe(z.enum(COUNTRY_CODES, "Choose a nationality."));
 
-export const proposerSchema = z
+const middleName = z
+  .string()
+  .trim()
+  .regex(MIDDLE_NAME, "Use letters, spaces or hyphens only.")
+  .or(z.literal(""))
+  .optional()
+  .transform((value) => value || undefined);
+
+const emiratesId = z.string().transform((value, ctx) => {
+  const normalized = normalizeEmiratesId(value);
+  if (normalized) {
+    return normalized;
+  }
+
+  ctx.addIssue({
+    code: "custom",
+    message: "Enter the 15-digit Emirates ID starting with 784.",
+  });
+
+  return z.NEVER;
+});
+
+const nameFields = {
+  firstName: text(SINGLE_NAME, "Enter the first name.", "Use letters only."),
+  middleName,
+  lastName: text(SINGLE_NAME, "Enter the last name.", "Use letters only."),
+};
+
+export const contactSchema = z
   .object({
-    firstName: text(SINGLE_NAME, "Enter your first name.", "Use letters only."),
-    middleName: z
-      .string()
-      .trim()
-      .regex(MIDDLE_NAME, "Use letters, spaces or hyphens only.")
-      .or(z.literal(""))
-      .optional()
-      .transform((value) => value || undefined),
-    lastName: text(SINGLE_NAME, "Enter your last name.", "Use letters only."),
-    dateOfBirth: dateWithin(
-      DATE_WINDOWS.dateOfBirth,
-      `You need to be ${AGE_LIMITS.self.min} to ${AGE_LIMITS.self.max} years old.`
-    ),
-    gender: choice(Gender, "Choose your gender."),
-    maritalStatus: choice(MaritalStatus, "Choose your marital status."),
-    nationality: z.enum(COUNTRY_CODES, "Choose your nationality."),
-    email: z
-      .email("Enter a valid email address, e.g. name@example.com.")
-      .max(254),
     mobile: z.string().transform((value, ctx) => {
       const normalized = normalizeUaeMobile(value);
       if (normalized) {
@@ -126,68 +157,125 @@ export const proposerSchema = z
 
       return z.NEVER;
     }),
+    email: z
+      .email("Enter a valid email address, e.g. name@example.com.")
+      .max(254),
   })
-  .describe("Step 1: about you.");
+  .describe("Step 2: how to reach whoever filled in the form.");
 
-export type Proposer = z.output<typeof proposerSchema>;
+export const sponsorSchema = z
+  .object({ ...nameFields, nationality, emiratesId })
+  .describe(
+    "Step 2, Family without Self only: the person filling in the form, who sponsors the members' visas."
+  );
 
-const ageFor = (relation: Exclude<Relation, typeof Relation.Self>) =>
-  wholeNumber(AGE_LIMITS[relation].min, AGE_LIMITS[relation].max, "an age");
+export type Sponsor = z.output<typeof sponsorSchema>;
+
+const documentsSchema = z
+  .discriminatedUnion(
+    "eVisaOnly",
+    [
+      z.object({
+        eVisaOnly: z.literal(false),
+        emiratesId,
+        emiratesIdExpiry: dateWithin(
+          DATE_WINDOWS.emiratesIdExpiry,
+          "Enter an expiry date that hasn't passed."
+        ),
+      }),
+      z.object({
+        eVisaOnly: z.literal(true),
+        uidNumber: text(
+          /^\d{1,18}$/u,
+          "Enter the UID number.",
+          "Use digits only, up to 18."
+        ),
+      }),
+    ],
+    answerThis
+  )
+  .describe(
+    '"I have only an e-visa" decides whether Emirates ID or UID is asked.'
+  );
 
 const conditions = z
   .array(z.enum(Condition))
   .default([])
   .transform((list) => [...new Set(list)]);
 
+const ageRangeMessage = (relation: Relation) =>
+  relation === Relation.Child
+    ? `Children must be under ${AGE_LIMITS[Relation.Child].max + 1}.`
+    : `Must be ${AGE_LIMITS[relation].min} to ${AGE_LIMITS[relation].max} years old.`;
+
+/** What every member is asked on their tab, plus their health answers (step 4). */
+const personFields = (relation: Relation) => ({
+  ...nameFields,
+  dateOfBirth: dateWithin(
+    DATE_WINDOWS.dateOfBirth[relation],
+    ageRangeMessage(relation)
+  ),
+  nationality,
+  visaEmirate: choice(Emirate, "Choose the emirate that issued the visa."),
+  documents: documentsSchema,
+  visaFileNumber: text(
+    VISA_FILE_NUMBER,
+    "Enter the visa file number.",
+    "Use the format 201/2020/1234567."
+  ),
+  passportNumber: z
+    .string("Enter the passport number.")
+    .trim()
+    .toUpperCase()
+    .regex(PASSPORT_NUMBER, "Use 5–20 letters and digits."),
+  heightCm: wholeNumber(30, 250, "the height in cm"),
+  weightKg: wholeNumber(1, 300, "the weight in kg"),
+  conditions,
+  // Asked on the health step when they apply, and required there by the rules below.
+  smoker: z.boolean().optional(),
+  pregnant: z.boolean().optional(),
+});
+
+const genderChoice = choice(Gender, "Choose a gender.");
+const maritalStatusChoice = choice(MaritalStatus, "Choose a marital status.");
+
 export const membersSchema = z
   .object({
-    self: z.object({
-      conditions,
-      smoker: answer,
-      pregnant: z.boolean().optional(),
-    }),
-    spouse: z
+    self: z
       .object({
-        age: ageFor(Relation.Spouse),
-        gender: choice(Gender, "Choose a gender."),
-        conditions,
-        smoker: answer,
-        pregnant: z.boolean().optional(),
+        ...personFields(Relation.Self),
+        gender: genderChoice,
+        maritalStatus: maritalStatusChoice,
       })
+      .optional(),
+    spouse: z
+      .object({ ...personFields(Relation.Spouse), gender: genderChoice })
       .optional(),
     children: z
       .array(
-        z.object({
-          age: ageFor(Relation.Child),
-          gender: choice(Gender, "Choose a gender."),
-          conditions,
-          smoker: z.boolean().optional(),
-        })
+        z.object({ ...personFields(Relation.Child), gender: genderChoice })
       )
       .max(MAX_CHILDREN, `Add up to ${MAX_CHILDREN} children.`)
       .default([]),
     father: z
-      .object({ age: ageFor(Relation.Father), conditions, smoker: answer })
+      .object({
+        ...personFields(Relation.Father),
+        maritalStatus: maritalStatusChoice,
+      })
       .optional(),
     mother: z
-      .object({ age: ageFor(Relation.Mother), conditions, smoker: answer })
+      .object({
+        ...personFields(Relation.Mother),
+        maritalStatus: maritalStatusChoice,
+      })
       .optional(),
   })
   .describe(
-    "Step 2: who's covered. One self, at most one spouse/father/mother and up to 4 children. Self's age and gender come from the proposer."
+    "Step 3: one tab per member. Spouses are always Married and children Single, so neither is asked; fathers and mothers aren't asked their gender."
   );
 
 export type Members = z.output<typeof membersSchema>;
 export type MembersInput = z.input<typeof membersSchema>;
-
-export const measurementsSchema = z
-  .object({
-    heightCm: wholeNumber(50, 250, "your height in cm"),
-    weightKg: wholeNumber(10, 300, "your weight in kg"),
-  })
-  .describe(
-    "Step 3: the proposer's height and weight (health questions live on the members)."
-  );
 
 const previousPolicySchema = z.discriminatedUnion(
   "hasPreviousPolicy",
@@ -214,81 +302,14 @@ export const policySchema = z
     occupation: choice(Occupation, "Choose your occupation."),
   })
   .and(previousPolicySchema)
-  .describe("Step 4: the policy wanted.");
-
-const identitySchema = z
-  .discriminatedUnion(
-    "eVisaOnly",
-    [
-      z.object({
-        eVisaOnly: z.literal(false),
-        emiratesId: z.string().transform((value, ctx) => {
-          const normalized = normalizeEmiratesId(value);
-          if (normalized) {
-            return normalized;
-          }
-
-          ctx.addIssue({
-            code: "custom",
-            message: "Enter the 15-digit Emirates ID starting with 784.",
-          });
-
-          return z.NEVER;
-        }),
-        emiratesIdExpiry: dateWithin(
-          DATE_WINDOWS.emiratesIdExpiry,
-          "Enter an expiry date that hasn't passed."
-        ),
-      }),
-      z.object({
-        eVisaOnly: z.literal(true),
-        uidNumber: text(
-          /^\d{1,18}$/u,
-          "Enter your UID number.",
-          "Use digits only, up to 18."
-        ),
-      }),
-    ],
-    answerThis
-  )
-  .describe(
-    '"I don\'t have an Emirates ID, only an e-visa" decides which ID is asked.'
-  );
-
-export const residencySchema = z
-  .object({
-    emirate: choice(Emirate, "Choose the emirate that issued your visa."),
-    visaFileNumber: text(
-      VISA_FILE_NUMBER,
-      "Enter your visa file number.",
-      "Use the format 201/2020/1234567."
-    ),
-    passportNumber: z
-      .string("Enter your passport number.")
-      .trim()
-      .toUpperCase()
-      .regex(PASSPORT_NUMBER, "Use 5–20 letters and digits."),
-    sponsorFirstName: text(
-      SINGLE_NAME,
-      "Enter your sponsor's first name.",
-      "Use letters only."
-    ),
-    sponsorLastName: z
-      .string("Enter your sponsor's last name.")
-      .trim()
-      .min(1, "Enter your sponsor's last name.")
-      .max(40),
-  })
-  .and(identitySchema)
-  .describe("Step 4: residency and identity documents.");
+  .describe("Step 5: the policy wanted.");
 
 // Ordered member list shared by the form, the rules below and the Sheet rows.
 type AnyMembers = Members | MembersInput;
 
 /** Any one member's value within a members object. */
 export type MemberValue<T extends AnyMembers> =
-  | T["self"]
-  | NonNullable<T["spouse"] | T["father"] | T["mother"]>
+  | NonNullable<T["self"] | T["spouse"] | T["father"] | T["mother"]>
   | NonNullable<T["children"]>[number];
 
 /** Where a member lives below `members`, e.g. ["children", 1]. */
@@ -301,70 +322,71 @@ export interface MemberEntry<T extends AnyMembers> {
   path: MemberPath;
   /** 1-based position among children; undefined for other relations. */
   childNo?: number;
+  /** Asked of self, spouse and children; fixed for father and mother. */
   gender: Gender | undefined;
-  /** Self's age comes from the date of birth; undefined while not yet valid. */
+  /** Asked of self, father and mother; spouses are Married, children Single. */
+  maritalStatus: MaritalStatus | undefined;
+  /** From the date of birth; undefined while that isn't a valid date. */
   age: number | undefined;
   member: MemberValue<T>;
 }
 
-const toAge = (age: unknown): number | undefined => {
-  const n = typeof age === "string" && age.trim() !== "" ? Number(age) : age;
-
-  return typeof n === "number" && Number.isInteger(n) ? n : undefined;
-};
-
 /** Members in display order: self, spouse, children, father, mother. */
 export const listMembers = <T extends AnyMembers>(
-  members: T,
-  proposer: { gender?: Gender; dateOfBirth?: Date | string }
+  members: T
 ): MemberEntry<T>[] => {
-  const entries: MemberEntry<T>[] = [
-    {
+  const entries: MemberEntry<T>[] = [];
+  const add = (entry: Omit<MemberEntry<T>, "age">) => {
+    entries.push({ ...entry, age: ageFromDob(entry.member.dateOfBirth) });
+  };
+
+  if (members.self) {
+    add({
       relation: Relation.Self,
       path: ["self"],
-      gender: proposer.gender,
-      age: ageFromDob(proposer.dateOfBirth),
+      gender: members.self.gender,
+      maritalStatus: members.self.maritalStatus,
       member: members.self,
-    },
-  ];
+    });
+  }
 
   if (members.spouse) {
-    entries.push({
+    add({
       relation: Relation.Spouse,
       path: ["spouse"],
       gender: members.spouse.gender,
-      age: toAge(members.spouse.age),
+      maritalStatus: MaritalStatus.Married,
       member: members.spouse,
     });
   }
 
   for (const [i, child] of (members.children ?? []).entries()) {
-    entries.push({
+    add({
       relation: Relation.Child,
       path: ["children", i],
       childNo: i + 1,
       gender: child.gender,
-      age: toAge(child.age),
+      maritalStatus: MaritalStatus.Single,
       member: child,
     });
   }
 
   if (members.father) {
-    entries.push({
+    add({
       relation: Relation.Father,
       path: ["father"],
       gender: Gender.Male,
-      age: toAge(members.father.age),
+      maritalStatus: members.father.maritalStatus,
       member: members.father,
     });
   }
 
   if (members.mother) {
-    entries.push({
+    add({
       relation: Relation.Mother,
       path: ["mother"],
       gender: Gender.Female,
-      age: toAge(members.mother.age),
+      maritalStatus: members.mother.maritalStatus,
       member: members.mother,
     });
   }
@@ -372,22 +394,32 @@ export const listMembers = <T extends AnyMembers>(
   return entries;
 };
 
-/** Smoker is asked for adults; only children can be under 18. */
-export const asksSmoker = (relation: Relation, age: number): boolean =>
-  relation !== Relation.Child || age >= ADULT_AGE;
+/** Smoker is asked of adults; only children are under 18. */
+export const asksSmoker = (age: number): boolean => age >= ADULT_AGE;
 
-/** Pregnancy is asked for a married female proposer or a female spouse, 18–55. */
-export const asksPregnancy = (
-  relation: Relation,
-  gender: Gender | undefined,
-  age: number,
-  maritalStatus: MaritalStatus | undefined
-): boolean =>
+/** Pregnancy is asked of married women aged 18–55. */
+export const asksPregnancy = ({
+  gender,
+  maritalStatus,
+  age,
+}: Pick<MemberEntry<AnyMembers>, "gender" | "maritalStatus"> & {
+  age: number;
+}): boolean =>
   gender === Gender.Female &&
+  maritalStatus === MaritalStatus.Married &&
   age >= ADULT_AGE &&
-  age <= PREGNANCY_MAX_AGE &&
-  (relation === Relation.Spouse ||
-    (relation === Relation.Self && maritalStatus === MaritalStatus.Married));
+  age <= PREGNANCY_MAX_AGE;
+
+/** Whether self is insured under this category. */
+export const coversSelf = (category: Category | undefined): boolean =>
+  category !== undefined && SELF_CATEGORIES.includes(category);
+
+/** Whether anyone other than self is covered. */
+export const hasFamily = (members: AnyMembers): boolean =>
+  members.spouse !== undefined ||
+  (members.children ?? []).length > 0 ||
+  members.father !== undefined ||
+  members.mother !== undefined;
 
 // Cross-field rules the shape can't express. Each runs as soon as the sections it
 // reads are valid, so errors show on the step that caused them.
@@ -403,12 +435,12 @@ const sectionsValid =
     });
 
 const leadShape = z.object({
-  proposer: proposerSchema,
+  category: choice(Category, "Choose who you're buying for."),
+  contact: contactSchema,
+  sponsor: sponsorSchema.optional(),
   members: membersSchema,
   hasPed: z.boolean(answerThis),
-  measurements: measurementsSchema,
   policy: policySchema,
-  residency: residencySchema,
   consent: z
     .boolean()
     .optional()
@@ -417,26 +449,62 @@ const leadShape = z.object({
 
 export const leadSchema = leadShape
   .superRefine(
-    ({ proposer, members }, ctx) => {
-      const hasMarriedOnly =
-        members.spouse !== undefined || members.children.length > 0;
+    // Reads only which members are present, so it runs on step 1 while their
+    // details are still blank. Its errors show under the category cards.
+    ({ category, members, sponsor }, ctx) => {
+      const issue = (path: PropertyKey[], message: string) =>
+        ctx.addIssue({ code: "custom", path, message });
 
-      if (proposer.maritalStatus !== MaritalStatus.Married && hasMarriedOnly) {
+      if (category === Category.SelfOnly && hasFamily(members)) {
+        issue(["category"], "Self Only covers just you.");
+      }
+
+      if (category !== Category.SelfOnly && !hasFamily(members)) {
+        issue(["category"], "Choose at least one family member.");
+      }
+
+      if (coversSelf(category) !== (members.self !== undefined)) {
+        issue(["category"], "Choose who you're buying for again.");
+      }
+
+      if (category === Category.FamilyOnly && !sponsor) {
+        issue(["sponsor"], "Enter the sponsor's details.");
+      }
+    },
+    { when: sectionsValid("category") }
+  )
+  .superRefine(
+    ({ members: { self, spouse, children } }, ctx) => {
+      const path = ["members", "self", "maritalStatus"];
+
+      if (self && spouse && self.maritalStatus !== MaritalStatus.Married) {
         ctx.addIssue({
           code: "custom",
-          path: ["members"],
-          message:
-            "Spouse and children can only be added when marital status is Married.",
+          path,
+          message: "You're covering a spouse, so choose Married.",
+        });
+      }
+
+      if (
+        self &&
+        children.length > 0 &&
+        self.maritalStatus === MaritalStatus.Single
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path,
+          message: "Children can't be covered when you're single.",
         });
       }
     },
-    { when: sectionsValid("proposer", "members") }
+    { when: sectionsValid("members") }
   )
   .superRefine(
-    ({ proposer, members, hasPed }, ctx) => {
-      const entries = listMembers(members, proposer);
+    ({ members, hasPed }, ctx) => {
+      const entries = listMembers(members);
 
-      for (const { relation, path, gender, age, member } of entries) {
+      for (const entry of entries) {
+        const { path, age, member } = entry;
         const at = (field: string) => ["members", ...path, field];
 
         if (!hasPed && member.conditions.length > 0) {
@@ -451,7 +519,7 @@ export const leadSchema = leadShape
           continue;
         }
 
-        if (asksSmoker(relation, age) && member.smoker === undefined) {
+        if (asksSmoker(age) && member.smoker === undefined) {
           ctx.addIssue({
             code: "custom",
             path: at("smoker"),
@@ -459,15 +527,7 @@ export const leadSchema = leadShape
           });
         }
 
-        const pregnant = "pregnant" in member ? member.pregnant : undefined;
-        const asked = asksPregnancy(
-          relation,
-          gender,
-          age,
-          proposer.maritalStatus
-        );
-
-        if (asked && pregnant === undefined) {
+        if (asksPregnancy({ ...entry, age }) && member.pregnant === undefined) {
           ctx.addIssue({
             code: "custom",
             path: at("pregnant"),
@@ -488,7 +548,7 @@ export const leadSchema = leadShape
         });
       }
     },
-    { when: sectionsValid("proposer", "members", "hasPed") }
+    { when: sectionsValid("members", "hasPed") }
   );
 
 export const submissionSchema = z
@@ -519,6 +579,12 @@ export const submissionSchema = z
 export type LeadInput = z.input<typeof leadSchema>;
 export type Lead = z.output<typeof leadSchema>;
 export type Submission = z.input<typeof submissionSchema>;
+
+/** The person the lead belongs to: self, or the sponsor under Family without Self. */
+export const leadHolder = (
+  lead: Pick<Lead, "members" | "sponsor">
+): Pick<Sponsor, "firstName" | "middleName" | "lastName"> | undefined =>
+  lead.members.self ?? lead.sponsor;
 
 export const submitResponseSchema = z
   .discriminatedUnion("ok", [

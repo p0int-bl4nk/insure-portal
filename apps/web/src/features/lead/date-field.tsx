@@ -12,13 +12,13 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
-import type { LeadFormValues } from "./form";
+import type { documentsField, LeadFormValues, memberField } from "./form";
 
 type DatePath =
-  | "proposer.dateOfBirth"
   | "policy.startDate"
   | "policy.previousPolicyExpiry"
-  | "residency.emiratesIdExpiry";
+  | ReturnType<typeof memberField<"dateOfBirth">>
+  | ReturnType<typeof documentsField<"emiratesIdExpiry">>;
 
 interface DateFieldProps {
   name: DatePath;

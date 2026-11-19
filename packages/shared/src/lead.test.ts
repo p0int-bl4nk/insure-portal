@@ -16,6 +16,7 @@ import {
 } from "./lead.ts";
 import type { LeadInput } from "./lead.ts";
 import {
+  Category,
   Condition,
   Emirate,
   Gender,
@@ -28,48 +29,73 @@ import {
 const today = todayInDubai();
 const dobAged = (years: number) => addYears(today, -years);
 
-const validLead = (): LeadInput => ({
-  proposer: {
-    firstName: "Rahul",
-    middleName: "",
-    lastName: "Menon",
-    dateOfBirth: dobAged(34),
-    gender: Gender.Male,
-    maritalStatus: MaritalStatus.Married,
-    nationality: "IN",
-    email: "rahul@example.com",
-    mobile: "50 123 4567",
+const person = (firstName: string, age: number) => ({
+  firstName,
+  middleName: "",
+  lastName: "Menon",
+  dateOfBirth: dobAged(age),
+  nationality: "IN" as const,
+  visaEmirate: Emirate.Dubai,
+  documents: {
+    eVisaOnly: false as const,
+    emiratesId: "784-1990-1234567-1",
+    emiratesIdExpiry: addYears(today, 2),
   },
+  visaFileNumber: "201/2020/1234567",
+  passportNumber: "p1234567",
+  heightCm: "175",
+  weightKg: "72",
+  conditions: [],
+});
+
+const validLead = (): LeadInput => ({
+  category: Category.SelfAndFamily,
+  contact: { email: "rahul@example.com", mobile: "50 123 4567" },
   members: {
-    self: { conditions: [Condition.Diabetes], smoker: false },
+    self: {
+      ...person("Rahul", 34),
+      gender: Gender.Male,
+      maritalStatus: MaritalStatus.Married,
+      conditions: [Condition.Diabetes],
+      smoker: false,
+    },
     spouse: {
-      age: 31,
+      ...person("Priya", 31),
       gender: Gender.Female,
-      conditions: [],
       smoker: false,
       pregnant: false,
     },
-    children: [{ age: 4, gender: Gender.Male, conditions: [] }],
+    children: [{ ...person("Aarav", 4), gender: Gender.Male }],
   },
   hasPed: true,
-  measurements: { heightCm: "175", weightKg: "72" },
   policy: {
     startDate: addDays(today, 7),
     incomeRange: IncomeRange.From10001To20000,
     occupation: Occupation.Salaried,
     hasPreviousPolicy: false,
   },
-  residency: {
-    emirate: Emirate.Dubai,
-    visaFileNumber: "201/2020/1234567",
-    passportNumber: "p1234567",
-    sponsorFirstName: "Acme",
-    sponsorLastName: "Trading LLC",
-    eVisaOnly: false,
-    emiratesId: "784-1990-1234567-1",
-    emiratesIdExpiry: addYears(today, 2),
-  },
   consent: true,
+});
+
+/** Parents only, bought by a sponsor who isn't covered. */
+const familyOnlyLead = (): LeadInput => ({
+  ...validLead(),
+  category: Category.FamilyOnly,
+  sponsor: {
+    firstName: "Rahul",
+    lastName: "Menon",
+    nationality: "IN",
+    emiratesId: "784-1990-1234567-1",
+  },
+  members: {
+    children: [],
+    mother: {
+      ...person("Lata", 60),
+      maritalStatus: MaritalStatus.Widowed,
+      conditions: [Condition.Thyroid],
+      smoker: false,
+    },
+  },
 });
 
 const issuePaths = (input: unknown) => {
@@ -123,17 +149,21 @@ describe("lead schema", () => {
   it("accepts a valid lead and normalises fields", () => {
     const lead = leadSchema.parse(validLead());
 
-    expect(lead.proposer.mobile).toBe("+971501234567");
-    expect(lead.proposer.middleName).toBeUndefined();
-    expect(lead.residency.passportNumber).toBe("P1234567");
-    expect(lead.measurements.heightCm).toBe(175);
+    expect(lead.contact.mobile).toBe("+971501234567");
+    expect(lead.members.self?.middleName).toBeUndefined();
+    expect(lead.members.self?.passportNumber).toBe("P1234567");
+    expect(lead.members.self?.heightCm).toBe(175);
+  });
+
+  it("accepts Family without Self with a sponsor", () => {
+    expect(issuePaths(familyOnlyLead())).toStrictEqual([]);
   });
 
   it("accepts dates sent as JSON strings", () => {
     const input = validLead();
     const sent = {
       ...input,
-      proposer: { ...input.proposer, dateOfBirth: dobAged(34).toISOString() },
+      policy: { ...input.policy, startDate: addDays(today, 7).toISOString() },
     };
 
     expect(leadSchema.safeParse(sent).success).toBeTruthy();
@@ -141,16 +171,26 @@ describe("lead schema", () => {
 
   it("asks for a date when one is missing", () => {
     const input = validLead();
-    input.proposer.dateOfBirth = undefined;
+    if (input.members.self) {
+      input.members.self.dateOfBirth = undefined;
+    }
 
-    expect(issuePaths(input)).toContain("proposer.dateOfBirth");
+    expect(issuePaths(input)).toContain("members.self.dateOfBirth");
   });
 
-  it("requires the proposer to be an adult", () => {
+  it("checks dates of birth against each relation's age limits", () => {
     const input = validLead();
-    input.proposer.dateOfBirth = dobAged(17);
+    if (input.members.self) {
+      input.members.self.dateOfBirth = dobAged(17);
+    }
+    input.members.children = [{ ...person("Aarav", 18), gender: Gender.Male }];
 
-    expect(issuePaths(input)).toContain("proposer.dateOfBirth");
+    expect(issuePaths(input)).toStrictEqual(
+      expect.arrayContaining([
+        "members.self.dateOfBirth",
+        "members.children.0.dateOfBirth",
+      ])
+    );
   });
 
   it("limits the policy start date to the next 30 days", () => {
@@ -173,84 +213,135 @@ describe("lead schema", () => {
 
   it("switches between Emirates ID and UID with the e-visa answer", () => {
     const input = validLead();
-    const withResidency = (patch: object) => ({
+    const withDocuments = (documents: object) => ({
       ...input,
-      residency: { ...input.residency, ...patch },
+      members: {
+        ...input.members,
+        spouse: { ...input.members.spouse, documents },
+      },
     });
 
-    expect(issuePaths(withResidency({ eVisaOnly: true }))).toContain(
-      "residency.uidNumber"
+    expect(issuePaths(withDocuments({ eVisaOnly: true }))).toContain(
+      "members.spouse.documents.uidNumber"
     );
-    expect(issuePaths(withResidency({ emiratesId: "123" }))).toContain(
-      "residency.emiratesId"
-    );
+    expect(
+      issuePaths(withDocuments({ eVisaOnly: false, emiratesId: "123" }))
+    ).toContain("members.spouse.documents.emiratesId");
   });
 
   it("validates visa file numbers", () => {
     const input = validLead();
-    input.residency = { ...input.residency, visaFileNumber: "2012020" };
-
-    expect(issuePaths(input)).toContain("residency.visaFileNumber");
-  });
-
-  it("enforces per-relation age limits from the shape", () => {
-    const input = validLead();
-    input.members.children = [{ age: 30, gender: Gender.Male }];
-
-    expect(issuePaths(input)).toContain("members.children.0.age");
-  });
-
-  it("rejects a spouse or children when the proposer is single", () => {
-    const input = validLead();
-    input.proposer.maritalStatus = MaritalStatus.Single;
-
-    expect(issuePaths(input)).toContain("members");
-  });
-
-  it("runs health checks even while later steps are incomplete", () => {
-    const input = validLead();
-    input.members.children = [{ age: 20, gender: Gender.Male }];
-    input.residency = { ...input.residency, visaFileNumber: "" };
-
-    expect(issuePaths(input)).toStrictEqual(
-      expect.arrayContaining([
-        "members.children.0.smoker",
-        "residency.visaFileNumber",
-      ])
-    );
-  });
-
-  it("asks pregnancy of a female spouse", () => {
-    const input = validLead();
-    if (input.members.spouse) {
-      delete input.members.spouse.pregnant;
+    if (input.members.self) {
+      input.members.self.visaFileNumber = "2012020";
     }
 
-    expect(issuePaths(input)).toStrictEqual(["members.spouse.pregnant"]);
+    expect(issuePaths(input)).toContain("members.self.visaFileNumber");
   });
 
-  it("ties conditions to the PED gate", () => {
-    const input = validLead();
-    input.members.self.conditions = [];
+  describe("category", () => {
+    it("needs at least one family member unless Self Only", () => {
+      const input = familyOnlyLead();
+      input.members = { children: [] };
 
-    expect(issuePaths(input)).toContain("hasPed");
+      expect(issuePaths(input)).toContain("category");
+    });
+
+    it("rejects family members under Self Only", () => {
+      expect(
+        issuePaths({ ...validLead(), category: Category.SelfOnly })
+      ).toContain("category");
+    });
+
+    it("needs a sponsor under Family without Self", () => {
+      const input = familyOnlyLead();
+      delete input.sponsor;
+
+      expect(issuePaths(input)).toContain("sponsor");
+    });
+
+    it("runs while member details are still blank", () => {
+      const input = familyOnlyLead();
+      input.members = { children: [] };
+      input.contact.email = "";
+
+      expect(issuePaths(input)).toContain("category");
+    });
+  });
+
+  describe("marital status", () => {
+    it("needs self to be Married when a spouse is covered", () => {
+      const input = validLead();
+      if (input.members.self) {
+        input.members.self.maritalStatus = MaritalStatus.Divorced;
+      }
+
+      expect(issuePaths(input)).toStrictEqual(["members.self.maritalStatus"]);
+    });
+
+    it("lets a divorced or widowed self cover children without a spouse", () => {
+      const input = validLead();
+      delete input.members.spouse;
+      if (input.members.self) {
+        input.members.self.maritalStatus = MaritalStatus.Widowed;
+      }
+
+      expect(issuePaths(input)).toStrictEqual([]);
+
+      if (input.members.self) {
+        input.members.self.maritalStatus = MaritalStatus.Single;
+      }
+
+      expect(issuePaths(input)).toStrictEqual(["members.self.maritalStatus"]);
+    });
+  });
+
+  describe("health", () => {
+    it("asks pregnancy of married women 18–55 only", () => {
+      const input = validLead();
+      if (input.members.spouse) {
+        delete input.members.spouse.pregnant;
+      }
+
+      expect(issuePaths(input)).toStrictEqual(["members.spouse.pregnant"]);
+      // A widowed mother isn't asked.
+      expect(issuePaths(familyOnlyLead())).toStrictEqual([]);
+    });
+
+    it("asks adults whether they smoke", () => {
+      const input = validLead();
+      if (input.members.self) {
+        delete input.members.self.smoker;
+      }
+
+      expect(issuePaths(input)).toStrictEqual(["members.self.smoker"]);
+    });
+
+    it("ties conditions to the PED gate", () => {
+      const input = validLead();
+      if (input.members.self) {
+        input.members.self.conditions = [];
+      }
+
+      expect(issuePaths(input)).toContain("hasPed");
+    });
   });
 });
 
 describe(listMembers, () => {
-  it("lists members in order, with self's age from the date of birth", () => {
-    const { members, proposer } = leadSchema.parse(validLead());
+  it("lists members in order, with ages from dates of birth", () => {
+    const { members } = leadSchema.parse(validLead());
 
     expect(
-      listMembers(members, proposer).map(({ relation, gender, age }) => [
+      listMembers(members).map(({ relation, gender, maritalStatus, age }) => [
         relation,
         gender,
+        maritalStatus,
         age,
       ])
     ).toStrictEqual([
-      [Relation.Self, Gender.Male, 34],
-      [Relation.Spouse, Gender.Female, 31],
-      [Relation.Child, Gender.Male, 4],
+      [Relation.Self, Gender.Male, MaritalStatus.Married, 34],
+      [Relation.Spouse, Gender.Female, MaritalStatus.Married, 31],
+      [Relation.Child, Gender.Male, MaritalStatus.Single, 4],
     ]);
   });
 });

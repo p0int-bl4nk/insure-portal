@@ -1,8 +1,6 @@
 import {
   DATE_WINDOWS,
   DECLARATION,
-  Emirate,
-  EMIRATE_LABELS,
   INCOME_RANGE_LABELS,
   IncomeRange,
   Occupation,
@@ -20,13 +18,10 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
-import { formatEmiratesIdInput } from "@/lib/utils";
 
 import { ChoiceGroup, optionsFrom, YesNoChoice } from "./choice-group";
 import { DateField } from "./date-field";
 import type { LeadFormValues } from "./form";
-import { SectionHeading } from "./section-heading";
-import { TextField } from "./text-field";
 
 export const PolicyStep = () => {
   const { control } = useFormContext<LeadFormValues>();
@@ -35,13 +30,10 @@ export const PolicyStep = () => {
     control,
     name: "policy.hasPreviousPolicy",
   });
-  const eVisaOnly = useWatch({ control, name: "residency.eVisaOnly" });
 
   return (
     <FieldGroup>
-      <section className="flex flex-col gap-5" aria-labelledby="policy-heading">
-        <SectionHeading id="policy-heading">Your policy</SectionHeading>
-
+      <section className="flex flex-col gap-5">
         <DateField
           name="policy.startDate"
           label="When do you want the policy to start?"
@@ -117,101 +109,6 @@ export const PolicyStep = () => {
             </FieldSet>
           )}
         />
-      </section>
-
-      <Separator />
-
-      <section
-        className="flex flex-col gap-5"
-        aria-labelledby="residency-heading"
-      >
-        <SectionHeading id="residency-heading">Residency and ID</SectionHeading>
-
-        <Controller
-          control={control}
-          name="residency.emirate"
-          render={({ field, fieldState }) => (
-            <FieldSet data-invalid={fieldState.invalid || undefined}>
-              <FieldLegend id="emirate-legend" variant="label">
-                Emirate that issued your visa
-              </FieldLegend>
-              <ChoiceGroup
-                aria-labelledby="emirate-legend"
-                options={optionsFrom(Emirate, EMIRATE_LABELS)}
-                columns={2}
-                value={field.value}
-                onChange={field.onChange}
-                invalid={fieldState.invalid}
-              />
-              <FieldError errors={[fieldState.error]} />
-            </FieldSet>
-          )}
-        />
-
-        <div className="grid gap-5 md:grid-cols-2 md:items-start md:gap-x-4">
-          <TextField
-            name="residency.sponsorFirstName"
-            label="Sponsor's first name"
-          />
-          <TextField
-            name="residency.sponsorLastName"
-            label="Sponsor's last name"
-          />
-        </div>
-
-        <Controller
-          control={control}
-          name="residency.eVisaOnly"
-          render={({ field }) => (
-            <Field orientation="horizontal">
-              <Checkbox
-                id="e-visa-only"
-                checked={field.value}
-                onCheckedChange={(checked) => field.onChange(checked)}
-              />
-              <FieldLabel htmlFor="e-visa-only" className="font-normal">
-                I don&apos;t have an Emirates ID, only an e-visa.
-              </FieldLabel>
-            </Field>
-          )}
-        />
-
-        {eVisaOnly ? (
-          <TextField
-            name="residency.uidNumber"
-            label="UID number"
-            inputMode="numeric"
-            maxLength={18}
-          />
-        ) : (
-          <div className="grid gap-5 md:grid-cols-2 md:items-start md:gap-x-4">
-            <TextField
-              name="residency.emiratesId"
-              label="Emirates ID"
-              placeholder="784-1990-1234567-1"
-              inputMode="numeric"
-              format={formatEmiratesIdInput}
-            />
-            <DateField
-              name="residency.emiratesIdExpiry"
-              label="Emirates ID expiry date"
-              window={DATE_WINDOWS.emiratesIdExpiry}
-            />
-          </div>
-        )}
-
-        <div className="grid gap-5 md:grid-cols-2 md:items-start md:gap-x-4">
-          <TextField
-            name="residency.visaFileNumber"
-            label="Visa file number"
-            placeholder="201/2020/1234567"
-          />
-          <TextField
-            name="residency.passportNumber"
-            label="Passport number"
-            autoCapitalize="characters"
-          />
-        </div>
       </section>
 
       <Separator />

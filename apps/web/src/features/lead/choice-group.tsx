@@ -1,14 +1,20 @@
 import { cn } from "cn";
+import type { ReactNode } from "react";
 
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-interface Option<T extends string> {
+export interface Option<T extends string> {
   value: T;
   label: string;
 }
 
+interface ChoiceOption<T extends string> {
+  value: T;
+  label: ReactNode;
+}
+
 interface ChoiceGroupProps<T extends string> {
-  options: readonly Option<T>[];
+  options: readonly ChoiceOption<T>[];
   value: T | undefined;
   onChange: (value: T) => void;
   invalid?: boolean;

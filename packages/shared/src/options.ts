@@ -76,12 +76,35 @@ export const GENDER_LABELS: Record<Gender, string> = {
 export const MaritalStatus = {
   Single: "single",
   Married: "married",
+  Divorced: "divorced",
+  Widowed: "widowed",
 } as const;
 export type MaritalStatus = ValueOf<typeof MaritalStatus>;
 export const MARITAL_STATUS_LABELS: Record<MaritalStatus, string> = {
   [MaritalStatus.Single]: "Single",
   [MaritalStatus.Married]: "Married",
+  [MaritalStatus.Divorced]: "Divorced",
+  [MaritalStatus.Widowed]: "Widowed",
 };
+
+/** Who the policy is for: the first question of the form. */
+export const Category = {
+  SelfOnly: "self_only",
+  SelfAndFamily: "self_and_family",
+  FamilyOnly: "family_only",
+} as const;
+export type Category = ValueOf<typeof Category>;
+export const CATEGORY_LABELS: Record<Category, string> = {
+  [Category.SelfOnly]: "Self Only",
+  [Category.SelfAndFamily]: "Both Self and Family",
+  [Category.FamilyOnly]: "Family without Self",
+};
+
+/** Categories where the person filling in the form is also insured. */
+export const SELF_CATEGORIES: readonly Category[] = [
+  Category.SelfOnly,
+  Category.SelfAndFamily,
+];
 
 /** Declaration order is the order members are listed in the form and the Sheet. */
 export const Relation = {
@@ -126,16 +149,10 @@ export const CONDITION_LABELS: Record<Condition, string> = {
 
 export const MAX_CHILDREN = 4;
 
-/** Relations that can only be covered when the proposer is married. */
-export const MARRIED_ONLY_RELATIONS: readonly Relation[] = [
-  Relation.Spouse,
-  Relation.Child,
-];
-
 export const AGE_LIMITS: Record<Relation, { min: number; max: number }> = {
   [Relation.Self]: { min: 18, max: 99 },
   [Relation.Spouse]: { min: 18, max: 99 },
-  [Relation.Child]: { min: 0, max: 25 },
+  [Relation.Child]: { min: 0, max: 17 },
   [Relation.Father]: { min: 18, max: 99 },
   [Relation.Mother]: { min: 18, max: 99 },
 };
@@ -143,7 +160,7 @@ export const AGE_LIMITS: Record<Relation, { min: number; max: number }> = {
 /** Bump when DECLARATION changes. Stored with every lead to record what was agreed. */
 export const CONSENT_VERSION = "2026-11-declaration-1";
 
-/** The declaration the proposer agrees to on the last step. */
+/** The declaration agreed to on the last step. */
 export const DECLARATION = [
   "I hereby declare that what has been stated above is true and complete to the best of my knowledge and belief and I have not withheld any material information. It is understood and agreed that this declaration which is contained in the application form constitutes the basis of my/our contractual relationship with Insurance Co through our Third-Party Administrator (TPA) and that any non-disclosure or misrepresentation of facts will make my / our insurance coverage void from inception.",
   "I hereby authorize any hospital, physician, surgeon or any other organization to furnish to the Insurance Co through our TPA any or all information that may be required concerning my/our medical history. I understand and acknowledge any pregnancy not declared at the time of this application's coverage will be at the sole discretion of the insurer. The insurer has the right to not cover any maternity claims to any undeclared pregnancy. I also acknowledge and understand any pregnancy, which arises within forty calendar days from the date of this application; coverage will also be at the discretion of the insurer.",

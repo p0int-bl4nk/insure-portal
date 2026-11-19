@@ -1,4 +1,5 @@
 import {
+  CATEGORY_LABELS,
   CONDITION_LABELS,
   CONSENT_VERSION,
   countryName,
@@ -6,6 +7,7 @@ import {
   formatDmy,
   GENDER_LABELS,
   INCOME_RANGE_LABELS,
+  leadHolder,
   listMembers,
   MARITAL_STATUS_LABELS,
   OCCUPATION_LABELS,
@@ -34,27 +36,37 @@ const yesNo = (value: boolean | undefined): string => {
   return value ? "Yes" : "No";
 };
 
-const pregnantOf = ({ member }: Member) =>
-  "pregnant" in member ? member.pregnant : undefined;
+const fullName = (
+  person:
+    | { firstName: string; middleName?: string; lastName: string }
+    | undefined
+) =>
+  person
+    ? [person.firstName, person.middleName, person.lastName]
+        .filter(Boolean)
+        .join(" ")
+    : "";
 
 // Each column is its header plus how to fill it, so headers and values can't drift apart.
 const LEAD_COLUMNS = [
   ["lead_id", ({ leadId }) => leadId],
   ["reference", ({ leadId }) => toReference(leadId)],
   ["submitted_at_gst", ({ submittedAt }) => formatGst(submittedAt)],
+  ["category", ({ lead }) => CATEGORY_LABELS[lead.category]],
 
-  ["first_name", ({ lead }) => lead.proposer.firstName],
-  ["middle_name", ({ lead }) => lead.proposer.middleName ?? ""],
-  ["last_name", ({ lead }) => lead.proposer.lastName],
-  ["date_of_birth", ({ lead }) => formatDmy(lead.proposer.dateOfBirth)],
-  ["gender", ({ lead }) => GENDER_LABELS[lead.proposer.gender]],
+  ["contact_name", ({ lead }) => fullName(leadHolder(lead))],
+  ["contact_mobile", ({ lead }) => lead.contact.mobile],
+  ["contact_email", ({ lead }) => lead.contact.email],
+
+  // Only under Family without Self, where the person filling in the form isn't covered.
+  ["sponsor_first_name", ({ lead }) => lead.sponsor?.firstName ?? ""],
+  ["sponsor_middle_name", ({ lead }) => lead.sponsor?.middleName ?? ""],
+  ["sponsor_last_name", ({ lead }) => lead.sponsor?.lastName ?? ""],
   [
-    "marital_status",
-    ({ lead }) => MARITAL_STATUS_LABELS[lead.proposer.maritalStatus],
+    "sponsor_nationality",
+    ({ lead }) => (lead.sponsor ? countryName(lead.sponsor.nationality) : ""),
   ],
-  ["nationality", ({ lead }) => countryName(lead.proposer.nationality)],
-  ["mobile", ({ lead }) => lead.proposer.mobile],
-  ["email", ({ lead }) => lead.proposer.email],
+  ["sponsor_emirates_id", ({ lead }) => lead.sponsor?.emiratesId ?? ""],
 
   ["member_count", ({ members }) => members.length],
   ["any_ped", ({ lead }) => yesNo(lead.hasPed)],
@@ -64,11 +76,9 @@ const LEAD_COLUMNS = [
   ],
   [
     "any_pregnant",
-    ({ members }) => yesNo(members.some((entry) => pregnantOf(entry))),
+    ({ members }) => yesNo(members.some(({ member }) => member.pregnant)),
   ],
   ["max_age", ({ members }) => Math.max(...members.map(({ age }) => age ?? 0))],
-  ["height_cm", ({ lead }) => lead.measurements.heightCm],
-  ["weight_kg", ({ lead }) => lead.measurements.weightKg],
 
   ["policy_start_date", ({ lead }) => formatDmy(lead.policy.startDate)],
   [
@@ -81,28 +91,6 @@ const LEAD_COLUMNS = [
   ["income_range", ({ lead }) => INCOME_RANGE_LABELS[lead.policy.incomeRange]],
   ["occupation", ({ lead }) => OCCUPATION_LABELS[lead.policy.occupation]],
 
-  ["visa_emirate", ({ lead }) => EMIRATE_LABELS[lead.residency.emirate]],
-  ["visa_file_number", ({ lead }) => lead.residency.visaFileNumber],
-  ["passport_number", ({ lead }) => lead.residency.passportNumber],
-  ["sponsor_first_name", ({ lead }) => lead.residency.sponsorFirstName],
-  ["sponsor_last_name", ({ lead }) => lead.residency.sponsorLastName],
-  ["e_visa_only", ({ lead }) => yesNo(lead.residency.eVisaOnly)],
-  [
-    "emirates_id",
-    ({ lead }) => (lead.residency.eVisaOnly ? "" : lead.residency.emiratesId),
-  ],
-  [
-    "emirates_id_expiry",
-    ({ lead }) =>
-      lead.residency.eVisaOnly
-        ? ""
-        : formatDmy(lead.residency.emiratesIdExpiry),
-  ],
-  [
-    "uid_number",
-    ({ lead }) => (lead.residency.eVisaOnly ? lead.residency.uidNumber : ""),
-  ],
-
   ["consent_version", () => CONSENT_VERSION],
 ] as const satisfies readonly (readonly [string, (ctx: LeadContext) => Cell])[];
 
@@ -110,15 +98,49 @@ const MEMBER_COLUMNS = [
   ["lead_id", (_, { leadId }) => leadId],
   ["member_no", (_, __, index) => index + 1],
   ["relation", ({ relation }) => RELATION_LABELS[relation]],
+
+  ["first_name", ({ member }) => member.firstName],
+  ["middle_name", ({ member }) => member.middleName ?? ""],
+  ["last_name", ({ member }) => member.lastName],
+  ["date_of_birth", ({ member }) => formatDmy(member.dateOfBirth)],
   ["age", ({ age }) => age ?? ""],
   ["gender", ({ gender }) => (gender ? GENDER_LABELS[gender] : "")],
+  [
+    "marital_status",
+    ({ maritalStatus }) =>
+      maritalStatus ? MARITAL_STATUS_LABELS[maritalStatus] : "",
+  ],
+  ["nationality", ({ member }) => countryName(member.nationality)],
+
+  ["visa_emirate", ({ member }) => EMIRATE_LABELS[member.visaEmirate]],
+  ["visa_file_number", ({ member }) => member.visaFileNumber],
+  ["passport_number", ({ member }) => member.passportNumber],
+  ["e_visa_only", ({ member }) => yesNo(member.documents.eVisaOnly)],
+  [
+    "emirates_id",
+    ({ member: { documents } }) =>
+      documents.eVisaOnly ? "" : documents.emiratesId,
+  ],
+  [
+    "emirates_id_expiry",
+    ({ member: { documents } }) =>
+      documents.eVisaOnly ? "" : formatDmy(documents.emiratesIdExpiry),
+  ],
+  [
+    "uid_number",
+    ({ member: { documents } }) =>
+      documents.eVisaOnly ? documents.uidNumber : "",
+  ],
+
+  ["height_cm", ({ member }) => member.heightCm],
+  ["weight_kg", ({ member }) => member.weightKg],
   [
     "conditions",
     ({ member }) =>
       member.conditions.map((c) => CONDITION_LABELS[c]).join(", "),
   ],
   ["smoker", ({ member }) => yesNo(member.smoker)],
-  ["pregnant", (entry) => yesNo(pregnantOf(entry))],
+  ["pregnant", ({ member }) => yesNo(member.pregnant)],
 ] as const satisfies readonly (readonly [
   string,
   (entry: Member, ctx: LeadContext, index: number) => Cell,
@@ -132,7 +154,7 @@ export const leadToRows = (
   leadId: string,
   submittedAt: Date
 ): { leadRow: Cell[]; memberRows: Cell[][] } => {
-  const members = listMembers(lead.members, lead.proposer);
+  const members = listMembers(lead.members);
   const ctx: LeadContext = { lead, leadId, submittedAt, members };
 
   return {

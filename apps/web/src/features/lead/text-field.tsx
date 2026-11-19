@@ -10,12 +10,12 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
-import type { LeadFormValues } from "./form";
+import type { LeadFormValues, memberField } from "./form";
 
-/** Text fields, plus the numeric measurements (typed as `unknown` until parsed). */
+/** Text fields, plus height and weight (typed as `unknown` until parsed). */
 type TextPath =
   | FieldPathByValue<LeadFormValues, string | undefined>
-  | `measurements.${keyof LeadFormValues["measurements"]}`;
+  | ReturnType<typeof memberField<"heightCm" | "weightKg">>;
 
 type TextFieldProps = {
   name: TextPath;

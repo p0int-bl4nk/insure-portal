@@ -7,21 +7,21 @@ interface SuccessScreenProps {
   firstName: string;
   mobile: string;
   reference: string;
+  cover: string;
   members: string;
-  emirate: string;
 }
 
 export const SuccessScreen = ({
   firstName,
   mobile,
   reference,
+  cover,
   members,
-  emirate,
 }: SuccessScreenProps) => {
   const rows = [
     ["Reference", reference],
+    ["Cover", cover],
     ["Members", members],
-    ["Visa emirate", emirate],
   ] as const;
 
   return (

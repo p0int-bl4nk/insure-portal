@@ -20,20 +20,24 @@ import {
   memberEligibility,
   memberField,
   memberLabel,
-  pregnancyField,
   summarizeConditions,
 } from "./form";
-import type { LeadFormValues } from "./form";
+import type { FormMemberEntry, LeadFormValues } from "./form";
 import { SectionHeading } from "./section-heading";
-import { TextField } from "./text-field";
 
 interface LifestyleQuestion {
   who: string;
   text: string;
-  name:
-    | ReturnType<typeof memberField<"smoker">>
-    | NonNullable<ReturnType<typeof pregnancyField>>;
+  name: ReturnType<typeof memberField<"smoker" | "pregnant">>;
 }
+
+/** "Priya (Spouse)", or just "Spouse" while the name is blank. */
+const memberName = (entry: FormMemberEntry) => {
+  const label = memberLabel(entry);
+  const { firstName } = entry.member;
+
+  return firstName ? `${firstName} (${label})` : label;
+};
 
 export const HealthStep = () => {
   const {
@@ -45,17 +49,15 @@ export const HealthStep = () => {
 
   const members = useWatch({ control, name: "members" });
   const hasPed = useWatch({ control, name: "hasPed" });
-  const proposer = useWatch({ control, name: "proposer" });
 
   const [open, setOpen] = useState(0);
 
-  const entries = formMembers(members, proposer);
+  const entries = formMembers(members);
 
   // Yes/No follow-ups, only for the members they apply to.
   const lifestyle = entries.flatMap<LifestyleQuestion>((entry) => {
-    const asks = memberEligibility(entry, proposer.maritalStatus);
-    const who = memberLabel(entry);
-    const pregnant = pregnancyField(entry.path);
+    const asks = memberEligibility(entry);
+    const who = memberName(entry);
 
     return [
       ...(asks.asksSmoker
@@ -67,14 +69,20 @@ export const HealthStep = () => {
             },
           ]
         : []),
-      ...(asks.asksPregnancy && pregnant
-        ? [{ who, text: "is currently pregnant", name: pregnant }]
+      ...(asks.asksPregnancy
+        ? [
+            {
+              who,
+              text: "is currently pregnant",
+              name: memberField(entry.path, "pregnant"),
+            },
+          ]
         : []),
     ];
   });
 
   const clearConditions = () => {
-    for (const { path } of formMembers(getValues("members"), proposer)) {
+    for (const { path } of formMembers(getValues("members"))) {
       setValue(memberField(path, "conditions"), [], { shouldDirty: true });
     }
   };
@@ -116,7 +124,7 @@ export const HealthStep = () => {
           <SectionHeading id="who-has">Who has a condition?</SectionHeading>
 
           {entries.map((entry, index) => {
-            const label = `${memberLabel(entry)} · ${entry.age ?? "–"}`;
+            const label = `${memberName(entry)} · ${entry.age ?? "–"}`;
             const summary = summarizeConditions(entry.member.conditions ?? []);
             const panelId = `conditions-${entry.path.join("-")}`;
             const expanded = open === index;
@@ -244,29 +252,6 @@ export const HealthStep = () => {
           </section>
         </>
       )}
-
-      <Separator />
-
-      <section className="flex flex-col gap-5" aria-labelledby="measurements">
-        <SectionHeading id="measurements">
-          Your height and weight
-        </SectionHeading>
-
-        <div className="grid grid-cols-2 gap-3">
-          <TextField
-            name="measurements.heightCm"
-            label="Height (cm)"
-            inputMode="numeric"
-            maxLength={3}
-          />
-          <TextField
-            name="measurements.weightKg"
-            label="Weight (kg)"
-            inputMode="numeric"
-            maxLength={3}
-          />
-        </div>
-      </section>
 
       {errors.members?.message && (
         <FieldError>{errors.members.message}</FieldError>

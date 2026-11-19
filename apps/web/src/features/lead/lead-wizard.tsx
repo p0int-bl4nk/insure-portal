@@ -1,6 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  EMIRATE_LABELS,
+  Category,
+  CATEGORY_LABELS,
+  coversSelf,
+  leadHolder,
   leadSchema,
   listMembers,
   MaritalStatus,
@@ -15,8 +18,8 @@ import {
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
-import { FormProvider, useForm } from "react-hook-form";
+import type { FormEvent } from "react";
+import { FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -24,12 +27,15 @@ import { FieldError } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { submitLead } from "@/lib/api";
 
-import { AboutStep } from "./about-step";
+import { ContactStep } from "./contact-step";
+import { CoverStep } from "./cover-step";
 import {
   defaultValues,
+  detailFields,
   formMembers,
-  genderField,
-  ageField,
+  memberLabel,
+  newMember,
+  newSponsor,
   pruneHealthAnswers,
   STEP_COUNT,
 } from "./form";
@@ -44,15 +50,27 @@ import { WizardLayout } from "./wizard-layout";
 /** The Turnstile human check is off unless VITE_TURNSTILE_ENABLED=true. */
 const TURNSTILE_ENABLED = import.meta.env.VITE_TURNSTILE_ENABLED === "true";
 
+const Step = {
+  Cover: 0,
+  Contact: 1,
+  Members: 2,
+  Health: 3,
+  Policy: 4,
+} as const;
+
 const STEPS = [
   {
-    title: "About you",
+    title: "Who are you buying for?",
     intro:
-      "Get health insurance quotes for you and your family. Takes about 2 minutes.",
+      "Get health insurance quotes for you and your family. Takes about 5 minutes.",
   },
   {
-    title: "Who should be covered?",
-    intro: "Select everyone you want to insure. You can add up to 4 children.",
+    title: "How can we reach you?",
+    intro: "An advisor will contact you with quotes.",
+  },
+  {
+    title: "Member details",
+    intro: "Fill in each member's tab as on their passport and Emirates ID.",
   },
   {
     title: "Health details",
@@ -60,7 +78,7 @@ const STEPS = [
       "This helps us find plans that cover existing conditions. An advisor will go through details with you.",
   },
   {
-    title: "Policy and residency",
+    title: "Your policy",
     intro: "A few details insurers need to prepare your quotes.",
   },
 ] as const;
@@ -89,13 +107,51 @@ const formatUaeMobile = (mobile: string) => {
   return parts ? `+971 ${parts.a} ${parts.b} ${parts.c}` : mobile;
 };
 
+const scrollTop = () => window.scrollTo({ top: 0 });
+
+const SubmitLabel = ({
+  submitting,
+  isLast,
+  nextMember,
+}: {
+  submitting: boolean;
+  isLast: boolean;
+  /** Label of the next member tab, while there is one. */
+  nextMember: string | undefined;
+}) => {
+  if (submitting) {
+    return (
+      <>
+        <Spinner data-icon="inline-start" />
+        Submitting
+      </>
+    );
+  }
+
+  if (isLast) {
+    return "Get my quotes";
+  }
+
+  return (
+    <>
+      {nextMember ? `Next: ${nextMember}` : "Continue"}
+      <ArrowRightIcon data-icon="inline-end" />
+    </>
+  );
+};
+
 type Submitted = { lead: Lead } & Pick<
   Extract<SubmitResponse, { ok: true }>,
   "reference"
 >;
 
 export const LeadWizard = () => {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState<number>(Step.Cover);
+  const [memberTab, setMemberTab] = useState(0);
+  /** Member tabs that have passed their checks, by path ("self", "children.0"…). */
+  const [checkedTabs, setCheckedTabs] = useState<ReadonlySet<string>>(
+    new Set()
+  );
   const [token, setToken] = useState<string | null>(null);
   const [tokenMissing, setTokenMissing] = useState(false);
   const [submitError, setSubmitError] = useState<SubmitError | null>(null);
@@ -116,53 +172,119 @@ export const LeadWizard = () => {
     mode: "onTouched",
   });
 
-  const { handleSubmit, trigger, getValues, setValue, formState } = form;
+  const {
+    handleSubmit,
+    trigger,
+    getValues,
+    setValue,
+    getFieldState,
+    formState,
+  } = form;
 
   const goTo = (next: number) => {
     setStep(next);
-    window.scrollTo({ top: 0 });
+    scrollTop();
   };
 
-  /** The fields shown on the current step, so Continue only checks those. */
-  const stepFields = () => {
-    if (step === 0) {
-      return ["proposer" as const];
+  const members = formMembers(
+    useWatch({ control: form.control, name: "members" })
+  );
+  const tab = Math.min(memberTab, Math.max(members.length - 1, 0));
+  const nextMember = members[tab + 1];
+
+  /** Fits the members and sponsor to the chosen category before it's checked. */
+  const applyCategory = () => {
+    const category = getValues("category");
+
+    if (category === Category.SelfOnly) {
+      setValue("members", { self: getValues("members.self"), children: [] });
     }
 
-    if (step === 2) {
-      return ["hasPed" as const, "members" as const, "measurements" as const];
-    }
-
-    const entries = formMembers(getValues("members"), getValues("proposer"));
-
-    return entries.flatMap(({ path }) =>
-      [ageField(path), genderField(path)].filter((field) => field !== undefined)
+    setValue(
+      "members.self",
+      coversSelf(category)
+        ? (getValues("members.self") ?? newMember())
+        : undefined
     );
+    setValue(
+      "sponsor",
+      category === Category.FamilyOnly
+        ? (getValues("sponsor") ?? newSponsor())
+        : undefined
+    );
+
+    // A spouse makes self Married; children rule out Single.
+    const { self, spouse, children = [] } = getValues("members");
+    if (self && spouse) {
+      setValue("members.self.maritalStatus", MaritalStatus.Married);
+    } else if (
+      self &&
+      children.length > 0 &&
+      self.maritalStatus === MaritalStatus.Single
+    ) {
+      setValue("members.self.maritalStatus", undefined);
+    }
+  };
+
+  /** Checks the open member tab; on the last tab, checks them all. */
+  const checkMembers = async () => {
+    const current = members[tab];
+    if (current && nextMember) {
+      if (await trigger(detailFields(current))) {
+        setCheckedTabs((done) => new Set(done).add(current.path.join(".")));
+        setMemberTab(tab + 1);
+        scrollTop();
+      }
+      return false;
+    }
+
+    if (await trigger(members.flatMap((entry) => detailFields(entry)))) {
+      setCheckedTabs(new Set(members.map(({ path }) => path.join("."))));
+      return true;
+    }
+
+    const firstInvalid = members.findIndex((entry) =>
+      detailFields(entry).some((name) => getFieldState(name).invalid)
+    );
+    setMemberTab(Math.max(firstInvalid, 0));
+    scrollTop();
+    return false;
   };
 
   const next = async () => {
-    if (!(await trigger(stepFields()))) {
-      return;
-    }
+    switch (step) {
+      case Step.Cover: {
+        applyCategory();
+        if (!(await trigger("category"))) {
+          return;
+        }
+        setMemberTab(0);
+        break;
+      }
 
-    if (
-      step === 0 &&
-      getValues("proposer.maritalStatus") !== MaritalStatus.Married
-    ) {
-      // Spouse and children are only offered to married proposers.
-      setValue("members.spouse", undefined);
-      setValue("members.children", []);
-    }
+      case Step.Contact: {
+        if (!(await trigger(["contact", "sponsor"]))) {
+          return;
+        }
+        break;
+      }
 
-    if (step === 1) {
-      setValue(
-        "members",
-        pruneHealthAnswers(
-          getValues("members"),
-          getValues("proposer"),
-          getValues("proposer.maritalStatus")
-        )
-      );
+      case Step.Members: {
+        if (!(await checkMembers())) {
+          return;
+        }
+        setValue("members", pruneHealthAnswers(getValues("members")));
+        break;
+      }
+
+      case Step.Health: {
+        if (!(await trigger(["hasPed", "members"]))) {
+          return;
+        }
+        break;
+      }
+
+      default:
     }
 
     goTo(step + 1);
@@ -197,17 +319,17 @@ export const LeadWizard = () => {
     const { lead, reference } = submitted;
     return (
       <SuccessScreen
-        firstName={lead.proposer.firstName}
-        mobile={formatUaeMobile(lead.proposer.mobile)}
+        firstName={leadHolder(lead)?.firstName ?? ""}
+        mobile={formatUaeMobile(lead.contact.mobile)}
         reference={reference}
+        cover={CATEGORY_LABELS[lead.category]}
         members={[
           ...new Set(
-            listMembers(lead.members, lead.proposer).map(
+            listMembers(lead.members).map(
               ({ relation }) => RELATION_LABELS[relation]
             )
           ),
         ].join(", ")}
-        emirate={EMIRATE_LABELS[lead.residency.emirate]}
       />
     );
   }
@@ -222,23 +344,6 @@ export const LeadWizard = () => {
     event.preventDefault();
     return next();
   };
-
-  let submitLabel: ReactNode = (
-    <>
-      Continue
-      <ArrowRightIcon data-icon="inline-end" />
-    </>
-  );
-  if (formState.isSubmitting) {
-    submitLabel = (
-      <>
-        <Spinner data-icon="inline-start" />
-        Submitting
-      </>
-    );
-  } else if (isLast) {
-    submitLabel = "Get my quotes";
-  }
 
   return (
     <WizardLayout step={step}>
@@ -270,11 +375,18 @@ export const LeadWizard = () => {
               </p>
             </div>
 
-            {step === 0 && <AboutStep />}
-            {step === 1 && <MembersStep />}
-            {step === 2 && <HealthStep />}
-            {step === 3 && <PolicyStep />}
-            {step === 3 && TURNSTILE_ENABLED && (
+            {step === Step.Cover && <CoverStep />}
+            {step === Step.Contact && <ContactStep />}
+            {step === Step.Members && (
+              <MembersStep
+                tab={tab}
+                onTabChange={setMemberTab}
+                checked={checkedTabs}
+              />
+            )}
+            {step === Step.Health && <HealthStep />}
+            {step === Step.Policy && <PolicyStep />}
+            {isLast && TURNSTILE_ENABLED && (
               <div className="flex flex-col gap-2">
                 <Turnstile
                   ref={turnstile}
@@ -312,7 +424,14 @@ export const LeadWizard = () => {
                 variant="outline"
                 size="touch"
                 className="w-24"
-                onClick={() => goTo(step - 1)}
+                onClick={() => {
+                  if (step === Step.Members && tab > 0) {
+                    setMemberTab(tab - 1);
+                    scrollTop();
+                    return;
+                  }
+                  goTo(step - 1);
+                }}
                 disabled={formState.isSubmitting}
               >
                 <ArrowLeftIcon data-icon="inline-start" />
@@ -325,7 +444,15 @@ export const LeadWizard = () => {
               className="flex-1 md:w-56 md:flex-none"
               disabled={formState.isSubmitting}
             >
-              {submitLabel}
+              <SubmitLabel
+                submitting={formState.isSubmitting}
+                isLast={isLast}
+                nextMember={
+                  step === Step.Members && nextMember
+                    ? memberLabel(nextMember)
+                    : undefined
+                }
+              />
             </Button>
           </footer>
         </form>

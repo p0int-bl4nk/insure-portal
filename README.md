@@ -1,6 +1,6 @@
 # insure-portal
 
-Health-insurance lead form for Dubai/UAE users. A 3-step wizard collects basic details and minimal pre-existing-condition (PED) data; a Lambda validates it and appends it to a Google Sheet.
+Health-insurance lead form for Dubai/UAE users. A 5-step wizard (who's covered, contact, one tab per member, health, policy) collects each member's details and minimal pre-existing-condition (PED) data; a Lambda validates it and appends it to a Google Sheet.
 
 ```
 apps/
@@ -69,8 +69,10 @@ Terraform state is local until the account is chosen; `infra/versions.tf` has th
 
 ## Sheet layout
 
-- **Leads**: one row per submission: reference and timestamp; name, date of birth, gender, marital status, nationality, mobile, email; member summary (`member_count`, `any_ped`, `any_smoker`, `any_pregnant`, `max_age`); height and weight; policy start date, previous policy expiry, income range, occupation; visa emirate, visa file number, passport number, sponsor name, Emirates ID (or e-visa UID) and expiry; `consent_version`. The column list lives in `LEAD_COLUMNS` in `apps/api/src/rows.ts`, and `sheet:init` writes the headers from it.
-- **Members**: one row per insured member, linked by `lead_id`.
+- **Leads**: one row per submission: reference and timestamp; category (Self Only, Both Self and Family, Family without Self); contact name, mobile and email; sponsor name, nationality and Emirates ID (Family without Self only); member summary (`member_count`, `any_ped`, `any_smoker`, `any_pregnant`, `max_age`); policy start date, previous policy expiry, income range, occupation; `consent_version`. The column list lives in `LEAD_COLUMNS` in `apps/api/src/rows.ts`.
+- **Members**: one row per insured member, linked by `lead_id`: relation; first, middle and last name; date of birth and age; gender; marital status; nationality; visa emirate, visa file number, passport number; Emirates ID and expiry, or e-visa UID; height and weight; conditions, smoker, pregnant. The column list lives in `MEMBER_COLUMNS`.
+
+`sheet:init` writes both header rows from these lists. After changing the columns, run it again and clear any rows written under the old headers.
 
 Both rows are written in a single atomic `batchUpdate`. Cells are written as literals, so a value like `=SUM()` can never run as a formula.
 

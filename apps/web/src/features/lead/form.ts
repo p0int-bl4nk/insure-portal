@@ -2,7 +2,6 @@ import {
   asksPregnancy,
   asksSmoker,
   CONDITION_LABELS,
-  Gender,
   listMembers,
   Relation,
   RELATION_LABELS,
@@ -10,7 +9,6 @@ import {
 import type {
   Condition,
   LeadInput,
-  MaritalStatus,
   MemberEntry,
   MemberPath,
 } from "@insure/shared";
@@ -20,73 +18,53 @@ export type LeadFormValues = LeadInput;
 export type MembersFormValues = LeadFormValues["members"];
 export type FormMemberEntry = MemberEntry<MembersFormValues>;
 
-/** What the member list needs from the proposer: self's gender and date of birth. */
-export type ProposerBasics = Pick<
-  Partial<LeadFormValues["proposer"]>,
-  "gender" | "dateOfBirth"
->;
-
 type ChildValues = NonNullable<MembersFormValues["children"]>[number];
+type SponsorValues = NonNullable<LeadFormValues["sponsor"]>;
 
 export const STEP_TITLES = [
-  "About you",
   "Who's covered",
+  "Contact details",
+  "Member details",
   "Health details",
-  "Policy & residency",
+  "Policy",
 ] as const;
 
 export const STEP_COUNT = STEP_TITLES.length;
 
 export const defaultValues: DefaultValues<LeadFormValues> = {
-  proposer: {
-    firstName: "",
-    middleName: "",
-    lastName: "",
-    email: "",
-    mobile: "",
-  },
-  members: { self: { conditions: [] }, children: [] },
-  measurements: { heightCm: "", weightKg: "" },
-  residency: {
-    eVisaOnly: false,
-    visaFileNumber: "",
-    passportNumber: "",
-    sponsorFirstName: "",
-    sponsorLastName: "",
-  },
+  contact: { mobile: "", email: "" },
+  members: { children: [] },
   consent: false,
 };
 
-/** Blank members for newly ticked relations. Spouse defaults to the opposite gender. */
-export const newMember = {
-  spouse: (
-    proposerGender?: Gender
-  ): NonNullable<MembersFormValues["spouse"]> => ({
-    age: "",
-    conditions: [],
-    gender:
-      proposerGender &&
-      (proposerGender === Gender.Male ? Gender.Female : Gender.Male),
-  }),
+/**
+ * A blank member for a newly added relation. Every relation is asked the same
+ * details, and the extra gender and marital status fields start blank too.
+ */
+export const newMember = (): ChildValues => ({
+  firstName: "",
+  middleName: "",
+  lastName: "",
+  dateOfBirth: undefined,
+  documents: { eVisaOnly: false, emiratesId: "", emiratesIdExpiry: undefined },
+  visaFileNumber: "",
+  passportNumber: "",
+  heightCm: "",
+  weightKg: "",
+  conditions: [],
+});
 
-  child: (): ChildValues => ({ age: "", conditions: [] }),
-
-  father: (): NonNullable<MembersFormValues["father"]> => ({
-    age: "",
-    conditions: [],
-  }),
-
-  mother: (): NonNullable<MembersFormValues["mother"]> => ({
-    age: "",
-    conditions: [],
-  }),
-};
+export const newSponsor = (): SponsorValues => ({
+  firstName: "",
+  middleName: "",
+  lastName: "",
+  emiratesId: "",
+});
 
 /** Members in display order, from the current form values. */
 export const formMembers = (
-  members: MembersFormValues | undefined,
-  proposer: ProposerBasics
-): FormMemberEntry[] => (members ? listMembers(members, proposer) : []);
+  members: MembersFormValues | undefined
+): FormMemberEntry[] => (members ? listMembers(members) : []);
 
 /** "Self", "Spouse", "Child 2"… */
 export const memberLabel = ({
@@ -98,82 +76,107 @@ export const memberLabel = ({
 // Typed form paths, so react-hook-form hands back typed values.
 
 /** Fields every member has. */
-type CommonField = keyof MembersFormValues["self"] &
+type CommonField = keyof NonNullable<MembersFormValues["self"]> &
+  keyof NonNullable<MembersFormValues["spouse"]> &
   keyof NonNullable<MembersFormValues["father"]> &
   keyof ChildValues;
+
+type DocumentsField =
+  | "eVisaOnly"
+  | "emiratesId"
+  | "emiratesIdExpiry"
+  | "uidNumber";
+
+/** Form path of a member, e.g. "members.children.1". */
+export const memberBase = (path: MemberPath) =>
+  path[0] === "children"
+    ? (`members.children.${path[1]}` as const)
+    : (`members.${path[0]}` as const);
 
 /** Form path of a field every member has, e.g. "members.children.1.smoker". */
 export const memberField = <F extends CommonField>(
   path: MemberPath,
   field: F
-) =>
-  path[0] === "children"
-    ? (`members.children.${path[1]}.${field}` as const)
-    : (`members.${path[0]}.${field}` as const);
+) => `${memberBase(path)}.${field}` as const;
 
-/** Age path for the members whose age is asked (everyone except self). */
-export const ageField = (path: MemberPath) => {
-  if (path[0] === "children") {
-    return `members.children.${path[1]}.age` as const;
-  }
+/** Form path of a member's ID document field, e.g. "members.self.documents.uidNumber". */
+export const documentsField = <F extends DocumentsField>(
+  path: MemberPath,
+  field: F
+) => `${memberBase(path)}.documents.${field}` as const;
 
-  return path[0] === "self" ? undefined : (`members.${path[0]}.age` as const);
-};
-
-/** Gender path for the members who are asked it (spouse, child). */
+/** Gender path for the members who are asked it (self, spouse, children). */
 export const genderField = (path: MemberPath) => {
   if (path[0] === "children") {
     return `members.children.${path[1]}.gender` as const;
   }
 
-  return path[0] === "spouse" ? ("members.spouse.gender" as const) : undefined;
-};
-
-/** Pregnancy path for the members who can be asked it (self, spouse). */
-export const pregnancyField = (path: MemberPath) => {
-  if (path[0] === "self") {
-    return "members.self.pregnant" as const;
-  }
-
-  return path[0] === "spouse"
-    ? ("members.spouse.pregnant" as const)
+  return path[0] === "self" || path[0] === "spouse"
+    ? (`members.${path[0]}.gender` as const)
     : undefined;
 };
+
+/** Marital status path for the members who are asked it (self, father, mother). */
+export const maritalStatusField = (path: MemberPath) =>
+  path[0] === "self" || path[0] === "father" || path[0] === "mother"
+    ? (`members.${path[0]}.maritalStatus` as const)
+    : undefined;
+
+const DETAIL_FIELDS = [
+  "firstName",
+  "middleName",
+  "lastName",
+  "dateOfBirth",
+  "nationality",
+  "visaEmirate",
+  "documents",
+  "visaFileNumber",
+  "passportNumber",
+  "heightCm",
+  "weightKg",
+] as const satisfies readonly CommonField[];
+
+/** Everything asked on a member's tab, so it can be checked on its own. */
+export const detailFields = ({ path }: Pick<FormMemberEntry, "path">) =>
+  [
+    ...DETAIL_FIELDS.map((field) => memberField(path, field)),
+    genderField(path),
+    maritalStatusField(path),
+  ].filter((field) => field !== undefined);
 
 // Health follow-ups
 
 /** Which health follow-ups apply to a member, given the answers so far. */
 export const memberEligibility = (
-  { relation, gender, age }: FormMemberEntry,
-  maritalStatus: MaritalStatus | undefined
+  entry: FormMemberEntry
 ): { asksSmoker: boolean; asksPregnancy: boolean } => {
+  const { age } = entry;
+
   if (age === undefined) {
     return { asksSmoker: false, asksPregnancy: false };
   }
 
   return {
-    asksSmoker: asksSmoker(relation, age),
-    asksPregnancy: asksPregnancy(relation, gender, age, maritalStatus),
+    asksSmoker: asksSmoker(age),
+    asksPregnancy: asksPregnancy({ ...entry, age }),
   };
 };
 
-/** Drops answers to questions that no longer apply (e.g. after an age change). */
+/** Drops answers to questions that no longer apply (e.g. after a date of birth change). */
 export const pruneHealthAnswers = (
-  members: MembersFormValues,
-  proposer: ProposerBasics,
-  maritalStatus: MaritalStatus | undefined
+  members: MembersFormValues
 ): MembersFormValues => {
   const next = structuredClone(members);
 
-  for (const entry of formMembers(next, proposer)) {
+  for (const entry of formMembers(next)) {
     const { member } = entry;
-    const eligibility = memberEligibility(entry, maritalStatus);
+    const eligibility = memberEligibility(entry);
 
     if (!eligibility.asksSmoker) {
       delete member.smoker;
     }
 
-    if (!eligibility.asksPregnancy && "pregnant" in member) {
+    if (!eligibility.asksPregnancy) {
       delete member.pregnant;
     }
   }
@@ -195,5 +198,3 @@ export const summarizeConditions = (
 
   return rest > 0 ? `${names.join(", ")} and ${rest} more` : names.join(", ");
 };
-
-// Input formatting
