@@ -9,10 +9,10 @@ import type {
 import { z } from "zod";
 
 import { getConfig } from "./config.ts";
+import type { Config } from "./config.ts";
 import { log } from "./log.ts";
 import type { Logger } from "./log.ts";
 import { leadToRows } from "./rows.ts";
-import { getSecrets } from "./secrets.ts";
 import { SheetsClient } from "./sheets.ts";
 import { verifyTurnstile } from "./turnstile.ts";
 import type { TurnstileResult } from "./turnstile.ts";
@@ -24,9 +24,10 @@ const MIN_FILL_MS = 3000;
 
 /** Side effects, injected so tests can replace them. Types follow the real implementations. */
 export interface Deps {
-  /** On only when TURNSTILE_ENABLED=true; otherwise submissions skip the human check. */
-  turnstileEnabled: boolean;
-  verify: (token: string, remoteIp?: string) => Promise<TurnstileResult>;
+  /** Set only when TURNSTILE_ENABLED=true; otherwise submissions skip the human check. */
+  verify:
+    | ((token: string, remoteIp?: string) => Promise<TurnstileResult>)
+    | undefined;
   append: SheetsClient["appendLead"];
   now: () => Date;
   newId: typeof randomUUID;
@@ -108,7 +109,7 @@ export const createHandler =
       return json(400, { ok: false, error: "invalid" });
     }
 
-    if (deps.turnstileEnabled) {
+    if (deps.verify) {
       const { turnstileToken } = parsed.data;
       if (!turnstileToken) {
         deps.log.warn("lead_rejected", { reason: "turnstile_missing" });
@@ -146,28 +147,16 @@ export const createHandler =
     return json(200, { ok: true, reference: toReference(leadId) });
   };
 
-/** Real dependencies, built from the config on first use. */
-const liveDeps = (): Deps => {
-  const config = getConfig();
-  let sheets: SheetsClient | undefined;
+/** Real dependencies for a loaded config. */
+const liveDeps = ({ turnstile, googleServiceAccount, sheet }: Config): Deps => {
+  const sheets = new SheetsClient(googleServiceAccount, sheet);
 
   return {
-    turnstileEnabled: config.turnstileEnabled,
-    verify: async (token, remoteIp) => {
-      const { turnstileSecretKey } = await getSecrets(config.secrets);
-      if (!turnstileSecretKey) {
-        throw new Error("Turnstile is enabled but no secret key is configured");
-      }
-
-      return verifyTurnstile(token, turnstileSecretKey, remoteIp);
-    },
-    append: async (leadRow, memberRows) => {
-      if (!sheets) {
-        const { googleServiceAccount } = await getSecrets(config.secrets);
-        sheets = new SheetsClient(googleServiceAccount, config.sheet);
-      }
-      await sheets.appendLead(leadRow, memberRows);
-    },
+    verify: turnstile.enabled
+      ? (token, remoteIp) =>
+          verifyTurnstile(token, turnstile.secretKey, remoteIp)
+      : undefined,
+    append: (leadRow, memberRows) => sheets.appendLead(leadRow, memberRows),
     now: () => new Date(),
     newId: randomUUID,
     log,
@@ -176,8 +165,9 @@ const liveDeps = (): Deps => {
 
 let live: ReturnType<typeof createHandler> | undefined;
 
-export const handler = (event: APIGatewayProxyEventV2) => {
-  live ??= createHandler(liveDeps());
+/** A bad env or unreadable secret throws, so the invocation fails loudly; the next one retries. */
+export const handler = async (event: APIGatewayProxyEventV2) => {
+  live ??= createHandler(liveDeps(await getConfig()));
 
   return live(event);
 };

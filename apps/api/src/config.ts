@@ -1,9 +1,28 @@
+import {
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from "@aws-sdk/client-secrets-manager";
 import { z } from "zod";
 
-import { serviceAccountSchema } from "./secrets.ts";
 import { jsonText } from "./utils.ts";
 
 const SHEET_ID = /^[\w-]{20,}$/u;
+
+const serviceAccountSchema = z.object({
+  client_email: z.string().min(1),
+  private_key: z.string().min(1),
+});
+
+const secretsSchema = z
+  .object({
+    googleServiceAccount: serviceAccountSchema,
+    turnstileSecretKey: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Only needed while TURNSTILE_ENABLED is on."),
+  })
+  .describe("Shape of the Secrets Manager secret (see README).");
 
 const baseEnvSchema = z.object({
   SPREADSHEET_ID: z
@@ -39,11 +58,7 @@ const secretsSourceSchema = z
       z
         .object({
           GOOGLE_SERVICE_ACCOUNT_JSON: jsonText.pipe(serviceAccountSchema),
-          TURNSTILE_SECRET_KEY: z
-            .string()
-            .min(1)
-            .optional()
-            .describe("Only needed while TURNSTILE_ENABLED is on."),
+          TURNSTILE_SECRET_KEY: secretsSchema.shape.turnstileSecretKey,
         })
         .transform((env) => ({
           kind: "env" as const,
@@ -62,7 +77,7 @@ const secretsSourceSchema = z
     "Secrets Manager in AWS (APP_SECRET_ID set); otherwise the same values from env vars."
   );
 
-const configSchema = baseEnvSchema
+const envSchema = baseEnvSchema
   .and(secretsSourceSchema.transform((secrets) => ({ secrets })))
   .transform((env) => ({
     sheet: {
@@ -75,27 +90,89 @@ const configSchema = baseEnvSchema
     secrets: env.secrets,
   }));
 
-export type Config = z.output<typeof configSchema>;
-export type SheetConfig = Config["sheet"];
-export type SecretsSource = Config["secrets"];
+const turnstileSchema = z
+  .discriminatedUnion("enabled", [
+    z.object({
+      enabled: z.literal(true),
+      secretKey: z.string(
+        "TURNSTILE_ENABLED is on but no Turnstile secret key is configured"
+      ),
+    }),
+    z.object({ enabled: z.literal(false) }),
+  ])
+  .describe("The key is required only while the check is on.");
 
-/** Parses an environment, reporting every bad or missing variable at once. */
-export const parseConfig = (
-  env: Record<string, string | undefined>
-): Config => {
-  const result = configSchema.safeParse(env);
+export type ServiceAccount = z.output<typeof serviceAccountSchema>;
+export type Env = z.output<typeof envSchema>;
+export type SheetConfig = Env["sheet"];
+
+/** Parses with a schema, reporting every problem at once. */
+const parseOrThrow = <T extends z.ZodType>(
+  schema: T,
+  value: unknown,
+  what: string
+): z.output<T> => {
+  const result = schema.safeParse(value);
   if (!result.success) {
-    throw new Error(`Invalid environment:\n${z.prettifyError(result.error)}`);
+    throw new Error(`Invalid ${what}:\n${z.prettifyError(result.error)}`);
   }
 
   return result.data;
 };
 
-let cached: Config | undefined;
+/** Parses an environment's variables, before any secret is fetched. */
+export const parseEnv = (env: Record<string, string | undefined>): Env =>
+  parseOrThrow(envSchema, env, "environment");
 
-/** The app config from process.env, parsed once per process. */
-export const getConfig = (): Config => {
-  cached ??= parseConfig(process.env);
+/** The Secrets Manager secret's JSON text. */
+const fetchSecret = async (secretId: string) => {
+  const client = new SecretsManagerClient({});
+  const { SecretString } = await client.send(
+    new GetSecretValueCommand({ SecretId: secretId })
+  );
+
+  return SecretString;
+};
+
+/** The full config: env vars plus secrets (Secrets Manager in AWS, env vars locally). */
+export const loadConfig = async (
+  rawEnv: Record<string, string | undefined>,
+  fetch: (secretId: string) => Promise<string | undefined> = fetchSecret
+) => {
+  const { secrets: source, turnstileEnabled, ...env } = parseEnv(rawEnv);
+  const secrets =
+    source.kind === "secretsManager"
+      ? parseOrThrow(
+          jsonText.pipe(secretsSchema),
+          await fetch(source.secretId),
+          "app secret"
+        )
+      : source.secrets;
+
+  return {
+    ...env,
+    googleServiceAccount: secrets.googleServiceAccount,
+    turnstile: parseOrThrow(
+      turnstileSchema,
+      { enabled: turnstileEnabled, secretKey: secrets.turnstileSecretKey },
+      "Turnstile config"
+    ),
+  };
+};
+
+export type Config = Awaited<ReturnType<typeof loadConfig>>;
+
+let cached: Promise<Config> | undefined;
+
+/** The config from process.env, loaded once per process (Lambda instance). */
+export const getConfig = (): Promise<Config> => {
+  if (!cached) {
+    cached = loadConfig(process.env);
+    // Let a failed load be retried by the next call instead of caching the failure.
+    cached.catch(() => {
+      cached = undefined;
+    });
+  }
 
   return cached;
 };

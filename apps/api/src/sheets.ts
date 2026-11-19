@@ -1,9 +1,8 @@
 import { JWT } from "google-auth-library";
 import { z } from "zod";
 
-import type { SheetConfig } from "./config.ts";
+import type { ServiceAccount, SheetConfig } from "./config.ts";
 import type { Cell } from "./rows.ts";
-import type { ServiceAccount } from "./secrets.ts";
 
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];

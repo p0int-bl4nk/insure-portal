@@ -89,7 +89,7 @@ const parse = (res: { statusCode?: number; body?: string }) => ({
 });
 
 describe("handler", () => {
-  const verify = vi.fn<Deps["verify"]>();
+  const verify = vi.fn<NonNullable<Deps["verify"]>>();
   const append = vi.fn<Deps["append"]>();
   const logInfo = vi.fn<Logger["info"]>();
   const logWarn = vi.fn<Logger["warn"]>();
@@ -98,8 +98,7 @@ describe("handler", () => {
 
   const makeHandler = (turnstileEnabled: boolean) =>
     createHandler({
-      turnstileEnabled,
-      verify,
+      verify: turnstileEnabled ? verify : undefined,
       append,
       now: () => NOW,
       newId: () => LEAD_ID,
