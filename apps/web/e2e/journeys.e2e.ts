@@ -92,7 +92,7 @@ test.describe("full journeys", { tag: "@journey" }, () => {
         },
       },
     });
-    expect(lead.sponsor).toBeUndefined();
+    expect(lead).not.toHaveProperty("sponsor");
     expect(lead.members.spouse).toBeUndefined();
   });
 
