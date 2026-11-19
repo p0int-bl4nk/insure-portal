@@ -164,12 +164,16 @@ export const contactSchema = z
   .describe("Step 2: how to reach whoever filled in the form.");
 
 export const sponsorSchema = z
-  .object({ ...nameFields, nationality, emiratesId })
+  .object(
+    { ...nameFields, nationality, emiratesId },
+    "Enter the sponsor's details."
+  )
   .describe(
     "Step 2, Family without Self only: the person filling in the form, who sponsors the members' visas."
   );
 
 export type Sponsor = z.output<typeof sponsorSchema>;
+export type SponsorInput = z.input<typeof sponsorSchema>;
 
 const documentsSchema = z
   .discriminatedUnion(
@@ -410,6 +414,29 @@ export const asksPregnancy = ({
   age >= ADULT_AGE &&
   age <= PREGNANCY_MAX_AGE;
 
+/**
+ * Members without answers to health questions they aren't asked, e.g. after a date
+ * of birth change, or sent by hand to the API. Eligibility hangs on age, so this
+ * can't be a schema branch.
+ */
+export const pruneHealthAnswers = <T extends AnyMembers>(members: T): T => {
+  const next = structuredClone(members);
+
+  for (const entry of listMembers(next)) {
+    const { age, member } = entry;
+
+    if (age === undefined || !asksSmoker(age)) {
+      delete member.smoker;
+    }
+
+    if (age === undefined || !asksPregnancy({ ...entry, age })) {
+      delete member.pregnant;
+    }
+  }
+
+  return next;
+};
+
 /** Whether self is insured under this category. */
 export const coversSelf = (category: Category | undefined): boolean =>
   category !== undefined && SELF_CATEGORIES.includes(category);
@@ -434,10 +461,8 @@ const sectionsValid =
       return !sections.some((name) => name === section);
     });
 
-const leadShape = z.object({
-  category: choice(Category, "Choose who you're buying for."),
+const leadFields = z.object({
   contact: contactSchema,
-  sponsor: sponsorSchema.optional(),
   members: membersSchema,
   hasPed: z.boolean(answerThis),
   policy: policySchema,
@@ -447,11 +472,27 @@ const leadShape = z.object({
     .pipe(z.literal(true, "You need to agree to continue.")),
 });
 
+// One branch per category, so a sponsor only exists where one is asked for and
+// is dropped everywhere else.
+const leadShape = z.discriminatedUnion(
+  "category",
+  [
+    leadFields.extend({
+      category: z.literal(Category.FamilyOnly),
+      sponsor: sponsorSchema,
+    }),
+    leadFields.extend({
+      category: z.enum([Category.SelfOnly, Category.SelfAndFamily]),
+    }),
+  ],
+  "Choose who you're buying for."
+);
+
 export const leadSchema = leadShape
   .superRefine(
     // Reads only which members are present, so it runs on step 1 while their
     // details are still blank. Its errors show under the category cards.
-    ({ category, members, sponsor }, ctx) => {
+    ({ category, members }, ctx) => {
       const issue = (path: PropertyKey[], message: string) =>
         ctx.addIssue({ code: "custom", path, message });
 
@@ -465,10 +506,6 @@ export const leadSchema = leadShape
 
       if (coversSelf(category) !== (members.self !== undefined)) {
         issue(["category"], "Choose who you're buying for again.");
-      }
-
-      if (category === Category.FamilyOnly && !sponsor) {
-        issue(["sponsor"], "Enter the sponsor's details.");
       }
     },
     { when: sectionsValid("category") }
@@ -497,7 +534,7 @@ export const leadSchema = leadShape
         });
       }
     },
-    { when: sectionsValid("members") }
+    { when: sectionsValid("category", "members") }
   )
   .superRefine(
     ({ members, hasPed }, ctx) => {
@@ -548,8 +585,12 @@ export const leadSchema = leadShape
         });
       }
     },
-    { when: sectionsValid("members", "hasPed") }
-  );
+    { when: sectionsValid("category", "members", "hasPed") }
+  )
+  .transform((lead) => ({
+    ...lead,
+    members: pruneHealthAnswers(lead.members),
+  }));
 
 export const submissionSchema = z
   .object({
@@ -582,9 +623,13 @@ export type Submission = z.input<typeof submissionSchema>;
 
 /** The person the lead belongs to: self, or the sponsor under Family without Self. */
 export const leadHolder = (
-  lead: Pick<Lead, "members" | "sponsor">
+  lead: Lead
 ): Pick<Sponsor, "firstName" | "middleName" | "lastName"> | undefined =>
-  lead.members.self ?? lead.sponsor;
+  lead.category === Category.FamilyOnly ? lead.sponsor : lead.members.self;
+
+/** The sponsor, who only exists under Family without Self. */
+export const leadSponsor = (lead: Lead): Sponsor | undefined =>
+  lead.category === Category.FamilyOnly ? lead.sponsor : undefined;
 
 export const submitResponseSchema = z
   .discriminatedUnion("ok", [

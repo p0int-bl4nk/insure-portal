@@ -7,6 +7,7 @@ import {
   leadSchema,
   listMembers,
   MaritalStatus,
+  pruneHealthAnswers,
   RELATION_LABELS,
 } from "@insure/shared";
 import type { Lead, SubmitError, SubmitResponse } from "@insure/shared";
@@ -35,8 +36,6 @@ import {
   formMembers,
   memberLabel,
   newMember,
-  newSponsor,
-  pruneHealthAnswers,
   STEP_COUNT,
 } from "./form";
 import type { LeadFormValues } from "./form";
@@ -177,6 +176,7 @@ export const LeadWizard = () => {
     trigger,
     getValues,
     setValue,
+    clearErrors,
     getFieldState,
     formState,
   } = form;
@@ -192,7 +192,7 @@ export const LeadWizard = () => {
   const tab = Math.min(memberTab, Math.max(members.length - 1, 0));
   const nextMember = members[tab + 1];
 
-  /** Fits the members and sponsor to the chosen category before it's checked. */
+  /** Fits the members to the chosen category before it's checked. */
   const applyCategory = () => {
     const category = getValues("category");
 
@@ -204,12 +204,6 @@ export const LeadWizard = () => {
       "members.self",
       coversSelf(category)
         ? (getValues("members.self") ?? newMember())
-        : undefined
-    );
-    setValue(
-      "sponsor",
-      category === Category.FamilyOnly
-        ? (getValues("sponsor") ?? newSponsor())
         : undefined
     );
 
@@ -258,6 +252,7 @@ export const LeadWizard = () => {
         if (!(await trigger("category"))) {
           return;
         }
+        clearErrors("members.children");
         setMemberTab(0);
         break;
       }

@@ -155,6 +155,52 @@ describe("handler", () => {
     });
   });
 
+  it("never writes answers to questions that weren't asked", async () => {
+    // Sent by hand: the form itself never includes these.
+    const sent = {
+      ...lead,
+      sponsor: {
+        firstName: "Vikram",
+        lastName: "Shah",
+        nationality: "IN",
+        emiratesId: "784198512345676",
+      },
+      members: {
+        ...lead.members,
+        self: { ...lead.members.self, pregnant: true },
+        children: [
+          {
+            ...person("Aarav", 4),
+            gender: Gender.Female,
+            smoker: true,
+            pregnant: true,
+          },
+        ],
+      },
+    };
+    const res = parse(await handler(event(submission({ lead: sent }))));
+    expect(res.status).toBe(200);
+
+    const [leadRow, memberRows = []] = append.mock.calls[0] ?? [];
+    const leadCells = Object.fromEntries(
+      LEAD_HEADERS.map((header, i) => [header, leadRow?.[i]])
+    );
+    expect(leadCells).toMatchObject({
+      sponsor_first_name: "",
+      sponsor_last_name: "",
+      sponsor_nationality: "",
+      sponsor_emirates_id: "",
+      any_smoker: "No",
+      any_pregnant: "No",
+    });
+    for (const row of memberRows) {
+      const cells = Object.fromEntries(
+        MEMBER_HEADERS.map((header, i) => [header, row[i]])
+      );
+      expect(cells.pregnant).not.toBe("Yes");
+    }
+  });
+
   it("skips the human check when Turnstile is switched off", async () => {
     const res = await makeHandler(false)(
       event(submission({ turnstileToken: undefined }))

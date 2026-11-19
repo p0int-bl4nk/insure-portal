@@ -17,7 +17,6 @@ import {
   memberEligibility,
   memberLabel,
   newMember,
-  pruneHealthAnswers,
   summarizeConditions,
 } from "./form";
 import type { MembersFormValues } from "./form";
@@ -123,27 +122,6 @@ describe(memberEligibility, () => {
       asksSmoker: false,
       asksPregnancy: false,
     });
-  });
-});
-
-describe(pruneHealthAnswers, () => {
-  it("drops answers to questions that no longer apply", () => {
-    const pruned = pruneHealthAnswers(
-      members({
-        self: {
-          ...bornAged(34),
-          gender: Gender.Male,
-          maritalStatus: MaritalStatus.Married,
-          smoker: false,
-          pregnant: false,
-        },
-        children: [{ ...bornAged(4), gender: Gender.Male, smoker: false }],
-      })
-    );
-
-    expect(pruned.self).not.toHaveProperty("pregnant");
-    expect(pruned.self).toHaveProperty("smoker", false);
-    expect(pruned.children?.[0]).not.toHaveProperty("smoker");
   });
 });
 

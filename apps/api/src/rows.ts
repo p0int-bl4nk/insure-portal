@@ -8,12 +8,13 @@ import {
   GENDER_LABELS,
   INCOME_RANGE_LABELS,
   leadHolder,
+  leadSponsor,
   listMembers,
   MARITAL_STATUS_LABELS,
   OCCUPATION_LABELS,
   RELATION_LABELS,
 } from "@insure/shared";
-import type { Lead, MemberEntry } from "@insure/shared";
+import type { Lead, MemberEntry, Sponsor } from "@insure/shared";
 
 import { formatGst, toReference } from "./utils.ts";
 
@@ -23,6 +24,7 @@ type Member = MemberEntry<Lead["members"]>;
 
 interface LeadContext {
   lead: Lead;
+  sponsor: Sponsor | undefined;
   leadId: string;
   submittedAt: Date;
   members: Member[];
@@ -59,14 +61,14 @@ const LEAD_COLUMNS = [
   ["contact_email", ({ lead }) => lead.contact.email],
 
   // Only under Family without Self, where the person filling in the form isn't covered.
-  ["sponsor_first_name", ({ lead }) => lead.sponsor?.firstName ?? ""],
-  ["sponsor_middle_name", ({ lead }) => lead.sponsor?.middleName ?? ""],
-  ["sponsor_last_name", ({ lead }) => lead.sponsor?.lastName ?? ""],
+  ["sponsor_first_name", ({ sponsor }) => sponsor?.firstName ?? ""],
+  ["sponsor_middle_name", ({ sponsor }) => sponsor?.middleName ?? ""],
+  ["sponsor_last_name", ({ sponsor }) => sponsor?.lastName ?? ""],
   [
     "sponsor_nationality",
-    ({ lead }) => (lead.sponsor ? countryName(lead.sponsor.nationality) : ""),
+    ({ sponsor }) => (sponsor ? countryName(sponsor.nationality) : ""),
   ],
-  ["sponsor_emirates_id", ({ lead }) => lead.sponsor?.emiratesId ?? ""],
+  ["sponsor_emirates_id", ({ sponsor }) => sponsor?.emiratesId ?? ""],
 
   ["member_count", ({ members }) => members.length],
   ["any_ped", ({ lead }) => yesNo(lead.hasPed)],
@@ -155,7 +157,13 @@ export const leadToRows = (
   submittedAt: Date
 ): { leadRow: Cell[]; memberRows: Cell[][] } => {
   const members = listMembers(lead.members);
-  const ctx: LeadContext = { lead, leadId, submittedAt, members };
+  const ctx: LeadContext = {
+    lead,
+    sponsor: leadSponsor(lead),
+    leadId,
+    submittedAt,
+    members,
+  };
 
   return {
     leadRow: LEAD_COLUMNS.map(([, value]) => value(ctx)),

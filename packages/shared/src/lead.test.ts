@@ -13,6 +13,7 @@ import {
   listMembers,
   normalizeEmiratesId,
   normalizeUaeMobile,
+  pruneHealthAnswers,
 } from "./lead.ts";
 import type { LeadInput } from "./lead.ts";
 import {
@@ -77,8 +78,13 @@ const validLead = (): LeadInput => ({
   consent: true,
 });
 
+type FamilyOnlyInput = Extract<
+  LeadInput,
+  { category: typeof Category.FamilyOnly }
+>;
+
 /** Parents only, bought by a sponsor who isn't covered. */
-const familyOnlyLead = (): LeadInput => ({
+const familyOnlyLead = (): FamilyOnlyInput => ({
   ...validLead(),
   category: Category.FamilyOnly,
   sponsor: {
@@ -253,7 +259,7 @@ describe("lead schema", () => {
     });
 
     it("needs a sponsor under Family without Self", () => {
-      const input = familyOnlyLead();
+      const input: Partial<FamilyOnlyInput> = familyOnlyLead();
       delete input.sponsor;
 
       expect(issuePaths(input)).toContain("sponsor");
@@ -324,6 +330,166 @@ describe("lead schema", () => {
 
       expect(issuePaths(input)).toContain("hasPed");
     });
+  });
+});
+
+// The form never sends these, but the API is public: whatever wasn't asked
+// mustn't reach the Sheet.
+describe("unasked answers", () => {
+  it("drops the sponsor unless the category is Family without Self", () => {
+    const { sponsor } = familyOnlyLead();
+
+    for (const category of [Category.SelfOnly, Category.SelfAndFamily]) {
+      const input = validLead();
+      const members =
+        category === Category.SelfOnly
+          ? { self: input.members.self, children: [] }
+          : input.members;
+      const lead = leadSchema.parse({ ...input, category, members, sponsor });
+
+      expect(lead).not.toHaveProperty("sponsor");
+    }
+  });
+
+  it("drops the previous policy's expiry when there wasn't one", () => {
+    const input = validLead();
+    const lead = leadSchema.parse({
+      ...input,
+      policy: { ...input.policy, previousPolicyExpiry: addDays(today, 10) },
+    });
+
+    expect(lead.policy).not.toHaveProperty("previousPolicyExpiry");
+  });
+
+  it("keeps only the ID asked by the e-visa answer", () => {
+    const input = validLead();
+    const { documents } = person("Priya", 31);
+    const lead = leadSchema.parse({
+      ...input,
+      members: {
+        ...input.members,
+        self: {
+          ...input.members.self,
+          documents: { ...documents, uidNumber: "123456" },
+        },
+        spouse: {
+          ...input.members.spouse,
+          documents: { ...documents, eVisaOnly: true, uidNumber: "123456" },
+        },
+      },
+    });
+
+    expect(lead.members.self?.documents).not.toHaveProperty("uidNumber");
+    expect(lead.members.spouse?.documents).toStrictEqual({
+      eVisaOnly: true,
+      uidNumber: "123456",
+    });
+  });
+
+  it("drops details a relation fixes rather than asks", () => {
+    const input = familyOnlyLead();
+    const lead = leadSchema.parse({
+      ...input,
+      members: {
+        children: [
+          {
+            ...person("Aarav", 4),
+            gender: Gender.Male,
+            maritalStatus: MaritalStatus.Married,
+          },
+        ],
+        mother: { ...input.members.mother, gender: Gender.Male },
+      },
+    });
+
+    expect(lead.members.children[0]).not.toHaveProperty("maritalStatus");
+    expect(lead.members.mother).not.toHaveProperty("gender");
+  });
+
+  it("drops pregnancy answers from adults who weren't asked", () => {
+    const input = validLead();
+    const lead = leadSchema.parse({
+      ...input,
+      members: {
+        ...input.members,
+        // A man isn't asked about pregnancy, nor is a woman over 55.
+        self: { ...input.members.self, pregnant: true },
+        spouse: { ...input.members.spouse, dateOfBirth: dobAged(56) },
+      },
+    });
+
+    expect(lead.members.self).not.toHaveProperty("pregnant");
+    expect(lead.members.spouse).not.toHaveProperty("pregnant");
+    // Adults are still asked whether they smoke.
+    expect(lead.members.self).toHaveProperty("smoker", false);
+    expect(lead.members.spouse).toHaveProperty("smoker", false);
+  });
+
+  it("drops both health answers from children", () => {
+    const input = validLead();
+    const lead = leadSchema.parse({
+      ...input,
+      members: {
+        ...input.members,
+        children: [
+          {
+            ...person("Aarav", 4),
+            gender: Gender.Female,
+            smoker: true,
+            pregnant: true,
+          },
+        ],
+      },
+    });
+
+    expect(lead.members.children[0]).not.toHaveProperty("smoker");
+    expect(lead.members.children[0]).not.toHaveProperty("pregnant");
+  });
+
+  it("keeps health answers to questions that were asked", () => {
+    const lead = leadSchema.parse({
+      ...validLead(),
+      members: {
+        ...validLead().members,
+        spouse: { ...validLead().members.spouse, pregnant: true },
+      },
+    });
+
+    expect(lead.members.spouse).toHaveProperty("pregnant", true);
+  });
+});
+
+describe(pruneHealthAnswers, () => {
+  it("drops answers to questions that no longer apply", () => {
+    const pruned = pruneHealthAnswers({
+      self: {
+        ...person("Rahul", 34),
+        gender: Gender.Male,
+        maritalStatus: MaritalStatus.Married,
+        smoker: false,
+        pregnant: false,
+      },
+      children: [{ ...person("Aarav", 4), gender: Gender.Male, smoker: false }],
+    });
+
+    expect(pruned.self).not.toHaveProperty("pregnant");
+    expect(pruned.self).toHaveProperty("smoker", false);
+    expect(pruned.children?.[0]).not.toHaveProperty("smoker");
+  });
+
+  it("works on form values, where a date of birth may be blank", () => {
+    const pruned = pruneHealthAnswers({
+      self: {
+        ...person("Rahul", 34),
+        dateOfBirth: undefined,
+        smoker: false,
+        pregnant: false,
+      },
+      children: [],
+    });
+
+    expect(pruned.self).not.toHaveProperty("smoker");
+    expect(pruned.self).not.toHaveProperty("pregnant");
   });
 });
 

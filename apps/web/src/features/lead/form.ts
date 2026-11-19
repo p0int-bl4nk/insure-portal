@@ -9,6 +9,7 @@ import {
 import type {
   Condition,
   LeadInput,
+  SponsorInput,
   MemberEntry,
   MemberPath,
 } from "@insure/shared";
@@ -19,7 +20,6 @@ export type MembersFormValues = LeadFormValues["members"];
 export type FormMemberEntry = MemberEntry<MembersFormValues>;
 
 type ChildValues = NonNullable<MembersFormValues["children"]>[number];
-type SponsorValues = NonNullable<LeadFormValues["sponsor"]>;
 
 export const STEP_TITLES = [
   "Who's covered",
@@ -30,12 +30,6 @@ export const STEP_TITLES = [
 ] as const;
 
 export const STEP_COUNT = STEP_TITLES.length;
-
-export const defaultValues: DefaultValues<LeadFormValues> = {
-  contact: { mobile: "", email: "" },
-  members: { children: [] },
-  consent: false,
-};
 
 /**
  * A blank member for a newly added relation. Every relation is asked the same
@@ -54,12 +48,20 @@ export const newMember = (): ChildValues => ({
   conditions: [],
 });
 
-export const newSponsor = (): SponsorValues => ({
+export const newSponsor = (): SponsorInput => ({
   firstName: "",
   middleName: "",
   lastName: "",
   emiratesId: "",
 });
+
+export const defaultValues: DefaultValues<LeadFormValues> = {
+  contact: { mobile: "", email: "" },
+  // Asked only under Family without Self; the schema drops it otherwise.
+  sponsor: newSponsor(),
+  members: { children: [] },
+  consent: false,
+};
 
 /** Members in display order, from the current form values. */
 export const formMembers = (
@@ -160,28 +162,6 @@ export const memberEligibility = (
     asksSmoker: asksSmoker(age),
     asksPregnancy: asksPregnancy({ ...entry, age }),
   };
-};
-
-/** Drops answers to questions that no longer apply (e.g. after a date of birth change). */
-export const pruneHealthAnswers = (
-  members: MembersFormValues
-): MembersFormValues => {
-  const next = structuredClone(members);
-
-  for (const entry of formMembers(next)) {
-    const { member } = entry;
-    const eligibility = memberEligibility(entry);
-
-    if (!eligibility.asksSmoker) {
-      delete member.smoker;
-    }
-
-    if (!eligibility.asksPregnancy) {
-      delete member.pregnant;
-    }
-  }
-
-  return next;
 };
 
 /** "None", "Diabetes, Thyroid" or "Diabetes, Thyroid and 3 more". */

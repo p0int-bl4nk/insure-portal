@@ -12,7 +12,7 @@ infra/        Terraform (CloudFront + S3, HTTP API, Lambda, Secrets Manager, ala
 scripts/      deploy-web.sh: upload the built site and invalidate CloudFront
 ```
 
-Tooling: pnpm workspaces with a catalog for shared versions, Turborepo, Ultracite (oxlint + oxfmt), Vitest.
+Tooling: pnpm workspaces with a catalog for shared versions, Turborepo, Ultracite (oxlint + oxfmt), Vitest, Playwright.
 
 ## Prerequisites
 
@@ -40,9 +40,17 @@ The Turnstile human check is **off by default**. To try it locally, set `TURNSTI
 | `pnpm build` | Production build of the web app |
 | `pnpm typecheck` | TypeScript across all packages |
 | `pnpm test` | Vitest across all packages |
+| `pnpm test:e2e` | Playwright browser tests of the wizard |
 | `pnpm check` | Ultracite lint + format check |
 | `pnpm fix` | Ultracite autofix + format |
 | `pnpm deploy:web` | Build the web app, upload it to S3, invalidate CloudFront |
+
+## Tests
+
+- **Vitest** (`pnpm test`) covers the rules: the shared Zod schema (`packages/shared/src/lead.test.ts`), form helpers, and the API handler and config. Every combination of category, relation, age and answer belongs here, where it runs in milliseconds.
+- **Playwright** (`pnpm test:e2e`, specs in `apps/web/e2e/*.e2e.ts`) drives the real wizard in Chromium: one full journey per category, each step's conditional fields and validation, moving between steps and member tabs, and every submit outcome. `/api/lead` is mocked with `page.route`, so the API server and Google Sheet are never touched, and Turnstile is switched off. The full journeys (tagged `@journey`) also run at phone size.
+
+First run: `pnpm --filter web exec playwright install chromium`. Failed tests keep a trace in `apps/web/test-results/`; open it with `pnpm --filter web exec playwright show-trace <path>`.
 
 ## Deploying (account not decided yet)
 
