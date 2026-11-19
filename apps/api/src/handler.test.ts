@@ -12,11 +12,11 @@ import {
 import type { LeadInput } from "@insure/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { toApiEvent } from "./event.ts";
 import { createHandler } from "./handler.ts";
 import type { Deps } from "./handler.ts";
 import type { Logger } from "./log.ts";
 import { LEAD_HEADERS } from "./rows.ts";
+import { toApiEvent } from "./utils.ts";
 
 const NOW = new Date("2026-11-18T10:05:33Z");
 const LEAD_ID = "7f3a21c9-0000-4000-8000-000000000000";

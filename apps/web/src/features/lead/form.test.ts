@@ -7,10 +7,10 @@ import {
 } from "@insure/shared";
 import { describe, expect, it } from "vitest";
 
+import { formatEmiratesIdInput, formatMobileInput } from "@/lib/utils";
+
 import {
   ageField,
-  formatEmiratesIdInput,
-  formatMobileInput,
   formMembers,
   genderField,
   memberEligibility,

@@ -20,10 +20,10 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
+import { formatEmiratesIdInput } from "@/lib/utils";
 
 import { ChoiceGroup, optionsFrom, YesNoChoice } from "./choice-group";
 import { DateField } from "./date-field";
-import { formatEmiratesIdInput } from "./form";
 import type { LeadFormValues } from "./form";
 import { SectionHeading } from "./section-heading";
 import { TextField } from "./text-field";
@@ -166,7 +166,7 @@ export const PolicyStep = () => {
             <Field orientation="horizontal">
               <Checkbox
                 id="e-visa-only"
-                checked={field.value === true}
+                checked={field.value}
                 onCheckedChange={(checked) => field.onChange(checked)}
               />
               <FieldLabel htmlFor="e-visa-only" className="font-normal">
@@ -227,10 +227,8 @@ export const PolicyStep = () => {
           >
             <Checkbox
               id="consent"
-              checked={field.value === true}
-              onCheckedChange={(checked) =>
-                field.onChange(checked ? true : undefined)
-              }
+              checked={field.value}
+              onCheckedChange={field.onChange}
               aria-invalid={fieldState.invalid || undefined}
               className="mt-0.5"
             />

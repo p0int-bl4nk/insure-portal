@@ -4,32 +4,24 @@ import {
 } from "@aws-sdk/client-secrets-manager";
 import { z } from "zod";
 
-import { jsonText } from "./json.ts";
+import type { SecretsSource } from "./config.ts";
+import { jsonText } from "./utils.ts";
 
-const serviceAccountSchema = z.object({
+export const serviceAccountSchema = z.object({
   client_email: z.string().min(1),
   private_key: z.string().min(1),
 });
 
-/** Shape of the Secrets Manager secret (see README). */
-const appSecretsSchema = z.object({
-  googleServiceAccount: serviceAccountSchema,
-  // Only needed while TURNSTILE_ENABLED is on.
-  turnstileSecretKey: z.string().min(1).optional(),
-});
-
-/** Local development: the same values from env vars. */
-const localEnvSchema = z
+const appSecretsSchema = z
   .object({
-    GOOGLE_SERVICE_ACCOUNT_JSON: jsonText.pipe(serviceAccountSchema),
-    TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
+    googleServiceAccount: serviceAccountSchema,
+    turnstileSecretKey: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Only needed while TURNSTILE_ENABLED is on."),
   })
-  .transform(
-    ({ GOOGLE_SERVICE_ACCOUNT_JSON, TURNSTILE_SECRET_KEY }): AppSecrets => ({
-      googleServiceAccount: GOOGLE_SERVICE_ACCOUNT_JSON,
-      turnstileSecretKey: TURNSTILE_SECRET_KEY,
-    })
-  );
+  .describe("Shape of the Secrets Manager secret (see README).");
 
 export type ServiceAccount = z.infer<typeof serviceAccountSchema>;
 export type AppSecrets = z.infer<typeof appSecretsSchema>;
@@ -45,12 +37,12 @@ const loadFromSecretsManager = async (secretId: string) => {
 let cached: Promise<AppSecrets> | undefined;
 
 /** Loaded once per Lambda instance: Secrets Manager in AWS, env vars locally. */
-export const getSecrets = (): Promise<AppSecrets> => {
+export const getSecrets = (source: SecretsSource): Promise<AppSecrets> => {
   if (!cached) {
-    const secretId = process.env.APP_SECRET_ID;
-    cached = secretId
-      ? loadFromSecretsManager(secretId)
-      : Promise.resolve().then(() => localEnvSchema.parse(process.env));
+    cached =
+      source.kind === "secretsManager"
+        ? loadFromSecretsManager(source.secretId)
+        : Promise.resolve(source.secrets);
     // Let a failed load be retried by the next request instead of caching the failure.
     cached.catch(() => {
       cached = undefined;

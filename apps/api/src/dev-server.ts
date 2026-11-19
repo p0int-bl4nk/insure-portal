@@ -3,10 +3,11 @@
 import { createServer } from "node:http";
 import { text } from "node:stream/consumers";
 
-import { toApiEvent } from "./event.ts";
+import { getConfig } from "./config.ts";
 import { handler } from "./handler.ts";
+import { toApiEvent } from "./utils.ts";
 
-const port = Number(process.env.PORT ?? 8787);
+const { port } = getConfig();
 
 createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${port}`);

@@ -8,14 +8,15 @@ import type {
 } from "aws-lambda";
 import { z } from "zod";
 
-import { jsonText } from "./json.ts";
+import { getConfig } from "./config.ts";
 import { log } from "./log.ts";
 import type { Logger } from "./log.ts";
-import { leadToRows, toReference } from "./rows.ts";
+import { leadToRows } from "./rows.ts";
 import { getSecrets } from "./secrets.ts";
-import { SheetsClient, sheetConfigFromEnv } from "./sheets.ts";
-import { turnstileEnabled, verifyTurnstile } from "./turnstile.ts";
+import { SheetsClient } from "./sheets.ts";
+import { verifyTurnstile } from "./turnstile.ts";
 import type { TurnstileResult } from "./turnstile.ts";
+import { jsonText, toReference } from "./utils.ts";
 
 const MAX_BODY_BYTES = 16 * 1024;
 /** Nobody completes three steps this fast; faster submissions are scripted. */
@@ -43,24 +44,23 @@ const json = (
   body: JSON.stringify(body),
 });
 
-/**
- * Why a body looks scripted, or undefined for a human-looking one. Read leniently
- * (any other shape counts as human) because full validation comes next.
- */
 const botSignal = (nowMs: number) =>
   z
     .union([
-      // Honeypot: the hidden "website" field was filled in.
       z
         .object({ website: z.string().min(1) })
-        .transform(() => "honeypot" as const),
-      // Form "completed" within MIN_FILL_MS of being shown.
+        .transform(() => "honeypot" as const)
+        .describe('Honeypot: the hidden "website" field was filled in.'),
       z
         .object({ startedAt: z.number().gt(nowMs - MIN_FILL_MS) })
-        .transform(() => "too_fast" as const),
+        .transform(() => "too_fast" as const)
+        .describe("Form completed within MIN_FILL_MS of being shown."),
     ])
     .optional()
-    .catch(undefined);
+    .catch(undefined)
+    .describe(
+      "Why a body looks scripted, or undefined for a human-looking one. Read leniently (any other shape counts as human) because full validation comes next."
+    );
 
 /** Returned to bots so they can't tell they were filtered out. Nothing is written. */
 const decoy = (deps: Deps) =>
@@ -146,26 +146,38 @@ export const createHandler =
     return json(200, { ok: true, reference: toReference(leadId) });
   };
 
-let sheets: SheetsClient | undefined;
+/** Real dependencies, built from the config on first use. */
+const liveDeps = (): Deps => {
+  const config = getConfig();
+  let sheets: SheetsClient | undefined;
 
-export const handler = createHandler({
-  turnstileEnabled: turnstileEnabled(),
-  verify: async (token, remoteIp) => {
-    const { turnstileSecretKey } = await getSecrets();
-    if (!turnstileSecretKey) {
-      throw new Error("Turnstile is enabled but no secret key is configured");
-    }
+  return {
+    turnstileEnabled: config.turnstileEnabled,
+    verify: async (token, remoteIp) => {
+      const { turnstileSecretKey } = await getSecrets(config.secrets);
+      if (!turnstileSecretKey) {
+        throw new Error("Turnstile is enabled but no secret key is configured");
+      }
 
-    return verifyTurnstile(token, turnstileSecretKey, remoteIp);
-  },
-  append: async (leadRow, memberRows) => {
-    if (!sheets) {
-      const { googleServiceAccount } = await getSecrets();
-      sheets = new SheetsClient(googleServiceAccount, sheetConfigFromEnv());
-    }
-    await sheets.appendLead(leadRow, memberRows);
-  },
-  now: () => new Date(),
-  newId: randomUUID,
-  log,
-});
+      return verifyTurnstile(token, turnstileSecretKey, remoteIp);
+    },
+    append: async (leadRow, memberRows) => {
+      if (!sheets) {
+        const { googleServiceAccount } = await getSecrets(config.secrets);
+        sheets = new SheetsClient(googleServiceAccount, config.sheet);
+      }
+      await sheets.appendLead(leadRow, memberRows);
+    },
+    now: () => new Date(),
+    newId: randomUUID,
+    log,
+  };
+};
+
+let live: ReturnType<typeof createHandler> | undefined;
+
+export const handler = (event: APIGatewayProxyEventV2) => {
+  live ??= createHandler(liveDeps());
+
+  return live(event);
+};

@@ -31,10 +31,10 @@ import {
   InputGroupInput,
   InputGroupText,
 } from "@/components/ui/input-group";
+import { formatMobileInput } from "@/lib/utils";
 
 import { ChoiceGroup, optionsFrom } from "./choice-group";
 import { DateField } from "./date-field";
-import { formatMobileInput } from "./form";
 import type { LeadFormValues } from "./form";
 import { TextField } from "./text-field";
 

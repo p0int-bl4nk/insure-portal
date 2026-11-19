@@ -92,46 +92,45 @@ const choice = <T extends Record<string, string>>(values: T, message: string) =>
 
 const answer = z.boolean().optional().pipe(z.boolean(answerThis));
 
-// Step 1: about you.
-export const proposerSchema = z.object({
-  firstName: text(SINGLE_NAME, "Enter your first name.", "Use letters only."),
-  middleName: z
-    .string()
-    .trim()
-    .regex(MIDDLE_NAME, "Use letters, spaces or hyphens only.")
-    .or(z.literal(""))
-    .optional()
-    .transform((value) => value || undefined),
-  lastName: text(SINGLE_NAME, "Enter your last name.", "Use letters only."),
-  dateOfBirth: dateWithin(
-    DATE_WINDOWS.dateOfBirth,
-    `You need to be ${AGE_LIMITS.self.min} to ${AGE_LIMITS.self.max} years old.`
-  ),
-  gender: choice(Gender, "Choose your gender."),
-  maritalStatus: choice(MaritalStatus, "Choose your marital status."),
-  nationality: z.enum(COUNTRY_CODES, "Choose your nationality."),
-  email: z
-    .email("Enter a valid email address, e.g. name@example.com.")
-    .max(254),
-  mobile: z.string().transform((value, ctx) => {
-    const normalized = normalizeUaeMobile(value);
-    if (normalized) {
-      return normalized;
-    }
+export const proposerSchema = z
+  .object({
+    firstName: text(SINGLE_NAME, "Enter your first name.", "Use letters only."),
+    middleName: z
+      .string()
+      .trim()
+      .regex(MIDDLE_NAME, "Use letters, spaces or hyphens only.")
+      .or(z.literal(""))
+      .optional()
+      .transform((value) => value || undefined),
+    lastName: text(SINGLE_NAME, "Enter your last name.", "Use letters only."),
+    dateOfBirth: dateWithin(
+      DATE_WINDOWS.dateOfBirth,
+      `You need to be ${AGE_LIMITS.self.min} to ${AGE_LIMITS.self.max} years old.`
+    ),
+    gender: choice(Gender, "Choose your gender."),
+    maritalStatus: choice(MaritalStatus, "Choose your marital status."),
+    nationality: z.enum(COUNTRY_CODES, "Choose your nationality."),
+    email: z
+      .email("Enter a valid email address, e.g. name@example.com.")
+      .max(254),
+    mobile: z.string().transform((value, ctx) => {
+      const normalized = normalizeUaeMobile(value);
+      if (normalized) {
+        return normalized;
+      }
 
-    ctx.addIssue({
-      code: "custom",
-      message: "Enter a UAE mobile number starting with 5, e.g. 50 123 4567.",
-    });
+      ctx.addIssue({
+        code: "custom",
+        message: "Enter a UAE mobile number starting with 5, e.g. 50 123 4567.",
+      });
 
-    return z.NEVER;
-  }),
-});
+      return z.NEVER;
+    }),
+  })
+  .describe("Step 1: about you.");
 
 export type Proposer = z.output<typeof proposerSchema>;
 
-// Step 2: who's covered. The shape enforces one self, at most one spouse/father/mother
-// and up to 4 children. Self's age and gender come from the proposer.
 const ageFor = (relation: Exclude<Relation, typeof Relation.Self>) =>
   wholeNumber(AGE_LIMITS[relation].min, AGE_LIMITS[relation].max, "an age");
 
@@ -140,50 +139,56 @@ const conditions = z
   .default([])
   .transform((list) => [...new Set(list)]);
 
-export const membersSchema = z.object({
-  self: z.object({
-    conditions,
-    smoker: answer,
-    pregnant: z.boolean().optional(),
-  }),
-  spouse: z
-    .object({
-      age: ageFor(Relation.Spouse),
-      gender: choice(Gender, "Choose a gender."),
+export const membersSchema = z
+  .object({
+    self: z.object({
       conditions,
       smoker: answer,
       pregnant: z.boolean().optional(),
-    })
-    .optional(),
-  children: z
-    .array(
-      z.object({
-        age: ageFor(Relation.Child),
+    }),
+    spouse: z
+      .object({
+        age: ageFor(Relation.Spouse),
         gender: choice(Gender, "Choose a gender."),
         conditions,
-        smoker: z.boolean().optional(),
+        smoker: answer,
+        pregnant: z.boolean().optional(),
       })
-    )
-    .max(MAX_CHILDREN, `Add up to ${MAX_CHILDREN} children.`)
-    .default([]),
-  father: z
-    .object({ age: ageFor(Relation.Father), conditions, smoker: answer })
-    .optional(),
-  mother: z
-    .object({ age: ageFor(Relation.Mother), conditions, smoker: answer })
-    .optional(),
-});
+      .optional(),
+    children: z
+      .array(
+        z.object({
+          age: ageFor(Relation.Child),
+          gender: choice(Gender, "Choose a gender."),
+          conditions,
+          smoker: z.boolean().optional(),
+        })
+      )
+      .max(MAX_CHILDREN, `Add up to ${MAX_CHILDREN} children.`)
+      .default([]),
+    father: z
+      .object({ age: ageFor(Relation.Father), conditions, smoker: answer })
+      .optional(),
+    mother: z
+      .object({ age: ageFor(Relation.Mother), conditions, smoker: answer })
+      .optional(),
+  })
+  .describe(
+    "Step 2: who's covered. One self, at most one spouse/father/mother and up to 4 children. Self's age and gender come from the proposer."
+  );
 
 export type Members = z.output<typeof membersSchema>;
 export type MembersInput = z.input<typeof membersSchema>;
 
-// Step 3: the proposer's height and weight (health questions live on the members).
-export const measurementsSchema = z.object({
-  heightCm: wholeNumber(50, 250, "your height in cm"),
-  weightKg: wholeNumber(10, 300, "your weight in kg"),
-});
+export const measurementsSchema = z
+  .object({
+    heightCm: wholeNumber(50, 250, "your height in cm"),
+    weightKg: wholeNumber(10, 300, "your weight in kg"),
+  })
+  .describe(
+    "Step 3: the proposer's height and weight (health questions live on the members)."
+  );
 
-// Step 4: the policy wanted, then residency and identity documents.
 const previousPolicySchema = z.discriminatedUnion(
   "hasPreviousPolicy",
   [
@@ -208,43 +213,47 @@ export const policySchema = z
     incomeRange: choice(IncomeRange, "Choose your income range."),
     occupation: choice(Occupation, "Choose your occupation."),
   })
-  .and(previousPolicySchema);
+  .and(previousPolicySchema)
+  .describe("Step 4: the policy wanted.");
 
-// "I don't have an Emirates ID, only an e-visa" decides which ID is asked.
-const identitySchema = z.discriminatedUnion(
-  "eVisaOnly",
-  [
-    z.object({
-      eVisaOnly: z.literal(false),
-      emiratesId: z.string().transform((value, ctx) => {
-        const normalized = normalizeEmiratesId(value);
-        if (normalized) {
-          return normalized;
-        }
+const identitySchema = z
+  .discriminatedUnion(
+    "eVisaOnly",
+    [
+      z.object({
+        eVisaOnly: z.literal(false),
+        emiratesId: z.string().transform((value, ctx) => {
+          const normalized = normalizeEmiratesId(value);
+          if (normalized) {
+            return normalized;
+          }
 
-        ctx.addIssue({
-          code: "custom",
-          message: "Enter the 15-digit Emirates ID starting with 784.",
-        });
+          ctx.addIssue({
+            code: "custom",
+            message: "Enter the 15-digit Emirates ID starting with 784.",
+          });
 
-        return z.NEVER;
+          return z.NEVER;
+        }),
+        emiratesIdExpiry: dateWithin(
+          DATE_WINDOWS.emiratesIdExpiry,
+          "Enter an expiry date that hasn't passed."
+        ),
       }),
-      emiratesIdExpiry: dateWithin(
-        DATE_WINDOWS.emiratesIdExpiry,
-        "Enter an expiry date that hasn't passed."
-      ),
-    }),
-    z.object({
-      eVisaOnly: z.literal(true),
-      uidNumber: text(
-        /^\d{1,18}$/u,
-        "Enter your UID number.",
-        "Use digits only, up to 18."
-      ),
-    }),
-  ],
-  answerThis
-);
+      z.object({
+        eVisaOnly: z.literal(true),
+        uidNumber: text(
+          /^\d{1,18}$/u,
+          "Enter your UID number.",
+          "Use digits only, up to 18."
+        ),
+      }),
+    ],
+    answerThis
+  )
+  .describe(
+    '"I don\'t have an Emirates ID, only an e-visa" decides which ID is asked.'
+  );
 
 export const residencySchema = z
   .object({
@@ -270,7 +279,8 @@ export const residencySchema = z
       .min(1, "Enter your sponsor's last name.")
       .max(40),
   })
-  .and(identitySchema);
+  .and(identitySchema)
+  .describe("Step 4: residency and identity documents.");
 
 // Ordered member list shared by the form, the rules below and the Sheet rows.
 type AnyMembers = Members | MembersInput;
@@ -399,7 +409,10 @@ const leadShape = z.object({
   measurements: measurementsSchema,
   policy: policySchema,
   residency: residencySchema,
-  consent: z.literal(true, "You need to agree to continue."),
+  consent: z
+    .boolean()
+    .optional()
+    .pipe(z.literal(true, "You need to agree to continue.")),
 });
 
 export const leadSchema = leadShape
@@ -478,29 +491,46 @@ export const leadSchema = leadShape
     { when: sectionsValid("proposer", "members", "hasPed") }
   );
 
-/** What the browser POSTs to /api/lead: the lead plus anti-abuse fields. */
-export const submissionSchema = z.object({
-  lead: leadSchema,
-  /** Absent when Turnstile is switched off in the web app; the API decides if it's required. */
-  turnstileToken: z.string().min(1).max(2048).optional(),
-  /** Honeypot: hidden from people, so it must be empty. */
-  website: z.string().max(0),
-  /** Epoch ms when the form was first shown. */
-  startedAt: z.number().int().positive(),
-});
+export const submissionSchema = z
+  .object({
+    lead: leadSchema,
+    turnstileToken: z
+      .string()
+      .min(1)
+      .max(2048)
+      .optional()
+      .describe(
+        "Absent when Turnstile is switched off in the web app; the API decides if it's required."
+      ),
+    website: z
+      .string()
+      .max(0)
+      .describe("Honeypot: hidden from people, so it must be empty."),
+    startedAt: z
+      .number()
+      .int()
+      .positive()
+      .describe("Epoch ms when the form was first shown."),
+  })
+  .describe(
+    "What the browser POSTs to /api/lead: the lead plus anti-abuse fields."
+  );
 
 export type LeadInput = z.input<typeof leadSchema>;
 export type Lead = z.output<typeof leadSchema>;
 export type Submission = z.input<typeof submissionSchema>;
 
-/** What /api/lead answers. Parsed by the browser, so the shape is checked both ways. */
-export const submitResponseSchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(true), reference: z.string() }),
-  z.object({
-    ok: z.literal(false),
-    error: z.enum(["invalid", "verification_failed", "unavailable"]),
-  }),
-]);
+export const submitResponseSchema = z
+  .discriminatedUnion("ok", [
+    z.object({ ok: z.literal(true), reference: z.string() }),
+    z.object({
+      ok: z.literal(false),
+      error: z.enum(["invalid", "verification_failed", "unavailable"]),
+    }),
+  ])
+  .describe(
+    "What /api/lead answers. Parsed by the browser, so the shape is checked both ways."
+  );
 
 export type SubmitResponse = z.infer<typeof submitResponseSchema>;
 export type SubmitError = Extract<SubmitResponse, { ok: false }>["error"];

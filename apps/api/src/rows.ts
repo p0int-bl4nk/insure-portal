@@ -13,6 +13,8 @@ import {
 } from "@insure/shared";
 import type { Lead, MemberEntry } from "@insure/shared";
 
+import { formatGst, toReference } from "./utils.ts";
+
 export type Cell = string | number;
 
 type Member = MemberEntry<Lead["members"]>;
@@ -34,33 +36,6 @@ const yesNo = (value: boolean | undefined): string => {
 
 const pregnantOf = ({ member }: Member) =>
   "pregnant" in member ? member.pregnant : undefined;
-
-const gstFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Dubai",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hourCycle: "h23",
-});
-
-/** "2026-11-18 14:05:33" in Gulf Standard Time (UTC+4). */
-export const formatGst = (date: Date): string => {
-  const p = Object.fromEntries(
-    gstFormatter.formatToParts(date).map((part) => [part.type, part.value])
-  );
-
-  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
-};
-
-/** Short human reference derived from the lead ID, e.g. "7F3A-21C9". */
-export const toReference = (leadId: string): string => {
-  const hex = leadId.replaceAll("-", "").slice(0, 8).toUpperCase();
-
-  return `${hex.slice(0, 4)}-${hex.slice(4)}`;
-};
 
 // Each column is its header plus how to fill it, so headers and values can't drift apart.
 const LEAD_COLUMNS = [
@@ -85,12 +60,11 @@ const LEAD_COLUMNS = [
   ["any_ped", ({ lead }) => yesNo(lead.hasPed)],
   [
     "any_smoker",
-    ({ members }) =>
-      yesNo(members.some(({ member }) => member.smoker === true)),
+    ({ members }) => yesNo(members.some(({ member }) => member.smoker)),
   ],
   [
     "any_pregnant",
-    ({ members }) => yesNo(members.some((entry) => pregnantOf(entry) === true)),
+    ({ members }) => yesNo(members.some((entry) => pregnantOf(entry))),
   ],
   ["max_age", ({ members }) => Math.max(...members.map(({ age }) => age ?? 0))],
   ["height_cm", ({ lead }) => lead.measurements.heightCm],

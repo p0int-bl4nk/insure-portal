@@ -1,44 +1,13 @@
 import { JWT } from "google-auth-library";
 import { z } from "zod";
 
+import type { SheetConfig } from "./config.ts";
 import type { Cell } from "./rows.ts";
 import type { ServiceAccount } from "./secrets.ts";
 
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
-const SHEET_URL = /\/spreadsheets\/d\/(?<id>[\w-]+)/u;
-const SHEET_ID = /^[\w-]{20,}$/u;
-
-const sheetEnvSchema = z
-  .object({
-    // Accepts the bare ID or a pasted Sheet URL (…/spreadsheets/d/<id>/edit…).
-    SPREADSHEET_ID: z
-      .string()
-      .trim()
-      .min(1, "SPREADSHEET_ID is not set")
-      .transform((value) => value.match(SHEET_URL)?.groups?.id ?? value)
-      .pipe(
-        z
-          .string()
-          .regex(SHEET_ID, "SPREADSHEET_ID must be the Sheet ID from its URL")
-      ),
-    SHEET_LEADS_TAB: z.string().min(1).default("Leads"),
-    SHEET_MEMBERS_TAB: z.string().min(1).default("Members"),
-  })
-  .transform((env) => ({
-    spreadsheetId: env.SPREADSHEET_ID,
-    leadsTab: env.SHEET_LEADS_TAB,
-    membersTab: env.SHEET_MEMBERS_TAB,
-  }));
-
-export type SheetConfig = z.output<typeof sheetEnvSchema>;
-
-export const sheetConfigFromEnv = (
-  env: Record<string, string | undefined> = process.env
-): SheetConfig => sheetEnvSchema.parse(env);
-
-/** The part of the spreadsheet metadata response we read. */
 const tabsSchema = z
   .object({
     sheets: z.array(
@@ -50,16 +19,16 @@ const tabsSchema = z
   .transform(
     ({ sheets }) =>
       new Map(sheets.map((s) => [s.properties.title, s.properties.sheetId]))
-  );
+  )
+  .describe("The part of the spreadsheet metadata response we read.");
 
-/**
- * Google's error type, e.g. "INVALID_ARGUMENT" or "PERMISSION_DENIED". Only the
- * status code is kept: the message text can echo submitted cell values.
- */
 const googleErrorSchema = z
   .object({ error: z.object({ status: z.string() }) })
   .transform(({ error }) => error.status)
-  .catch("UNKNOWN");
+  .catch("UNKNOWN")
+  .describe(
+    'Google\'s error type, e.g. "PERMISSION_DENIED". Only the status is kept: the message can echo submitted cell values.'
+  );
 
 /** New tabs get Google's default 26 columns (A–Z) unless asked for more. */
 const DEFAULT_COLUMN_COUNT = 26;
