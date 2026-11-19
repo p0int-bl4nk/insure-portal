@@ -14,7 +14,11 @@ export const StepHeader = ({ step }: { step: number }) => (
         STEP {step + 1} / {STEP_COUNT}
       </span>
     </div>
-    <div className="grid grid-cols-3 gap-1" aria-hidden="true">
+    <div
+      className="grid gap-1"
+      style={{ gridTemplateColumns: `repeat(${STEP_COUNT}, minmax(0, 1fr))` }}
+      aria-hidden="true"
+    >
       {Array.from({ length: STEP_COUNT }, (_, i) => (
         <div
           key={i}

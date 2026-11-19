@@ -29,16 +29,20 @@ import {
   defaultValues,
   formMembers,
   genderField,
-  memberField,
+  ageField,
   pruneHealthAnswers,
   STEP_COUNT,
 } from "./form";
 import type { LeadFormValues } from "./form";
 import { HealthStep } from "./health-step";
 import { MembersStep } from "./members-step";
+import { PolicyStep } from "./policy-step";
 import { StepHeader } from "./step-header";
 import { SuccessScreen } from "./success-screen";
 import { WizardLayout } from "./wizard-layout";
+
+/** The Turnstile human check is off unless VITE_TURNSTILE_ENABLED=true. */
+const TURNSTILE_ENABLED = import.meta.env.VITE_TURNSTILE_ENABLED === "true";
 
 const STEPS = [
   {
@@ -54,6 +58,10 @@ const STEPS = [
     title: "Health details",
     intro:
       "This helps us find plans that cover existing conditions. An advisor will go through details with you.",
+  },
+  {
+    title: "Policy and residency",
+    intro: "A few details insurers need to prepare your quotes.",
   },
 ] as const;
 
@@ -121,17 +129,15 @@ export const LeadWizard = () => {
       return ["proposer" as const];
     }
 
-    const entries = formMembers(
-      getValues("members"),
-      getValues("proposer.gender")
+    if (step === 2) {
+      return ["hasPed" as const, "members" as const, "measurements" as const];
+    }
+
+    const entries = formMembers(getValues("members"), getValues("proposer"));
+
+    return entries.flatMap(({ path }) =>
+      [ageField(path), genderField(path)].filter((field) => field !== undefined)
     );
-
-    return entries.flatMap(({ path }) => {
-      const gender = genderField(path);
-      const age = memberField(path, "age");
-
-      return gender ? [age, gender] : [age];
-    });
   };
 
   const next = async () => {
@@ -153,7 +159,7 @@ export const LeadWizard = () => {
         "members",
         pruneHealthAnswers(
           getValues("members"),
-          getValues("proposer.gender"),
+          getValues("proposer"),
           getValues("proposer.maritalStatus")
         )
       );
@@ -164,13 +170,14 @@ export const LeadWizard = () => {
 
   const onSubmit = async (lead: Lead) => {
     setSubmitError(null);
-    if (!token) {
+    if (TURNSTILE_ENABLED && !token) {
       setTokenMissing(true);
       return;
     }
+
     const result = await submitLead({
       lead,
-      turnstileToken: token,
+      turnstileToken: token ?? undefined,
       website: honeypot.current?.value ?? "",
       startedAt: startedAt.current,
     });
@@ -190,19 +197,17 @@ export const LeadWizard = () => {
     const { lead, reference } = submitted;
     return (
       <SuccessScreen
-        firstName={
-          lead.proposer.fullName.split(" ")[0] ?? lead.proposer.fullName
-        }
+        firstName={lead.proposer.firstName}
         mobile={formatUaeMobile(lead.proposer.mobile)}
         reference={reference}
         members={[
           ...new Set(
-            listMembers(lead.members, lead.proposer.gender).map(
+            listMembers(lead.members, lead.proposer).map(
               ({ relation }) => RELATION_LABELS[relation]
             )
           ),
         ].join(", ")}
-        emirate={EMIRATE_LABELS[lead.proposer.emirate]}
+        emirate={EMIRATE_LABELS[lead.residency.emirate]}
       />
     );
   }
@@ -267,26 +272,25 @@ export const LeadWizard = () => {
 
             {step === 0 && <AboutStep />}
             {step === 1 && <MembersStep />}
-            {step === 2 && (
-              <>
-                <HealthStep />
-                <div className="flex flex-col gap-2">
-                  <Turnstile
-                    ref={turnstile}
-                    siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
-                    options={{ size: "flexible", theme: "light" }}
-                    onSuccess={(t) => {
-                      setToken(t);
-                      setTokenMissing(false);
-                    }}
-                    onExpire={() => setToken(null)}
-                    onError={() => setToken(null)}
-                  />
-                  {tokenMissing && (
-                    <FieldError>Complete the check to continue.</FieldError>
-                  )}
-                </div>
-              </>
+            {step === 2 && <HealthStep />}
+            {step === 3 && <PolicyStep />}
+            {step === 3 && TURNSTILE_ENABLED && (
+              <div className="flex flex-col gap-2">
+                <Turnstile
+                  ref={turnstile}
+                  siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY ?? ""}
+                  options={{ size: "flexible", theme: "light" }}
+                  onSuccess={(t) => {
+                    setToken(t);
+                    setTokenMissing(false);
+                  }}
+                  onExpire={() => setToken(null)}
+                  onError={() => setToken(null)}
+                />
+                {tokenMissing && (
+                  <FieldError>Complete the check to continue.</FieldError>
+                )}
+              </div>
             )}
 
             {/* Honeypot: invisible to people and skipped by keyboard and screen readers. */}

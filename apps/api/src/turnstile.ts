@@ -16,6 +16,14 @@ const siteverifySchema = z
 
 export type TurnstileResult = z.output<typeof siteverifySchema>;
 
+/** Off unless TURNSTILE_ENABLED=true. Production should turn it on. */
+const flagSchema = z.object({
+  TURNSTILE_ENABLED: z.stringbool().default(false),
+});
+
+export const turnstileEnabled = (): boolean =>
+  flagSchema.parse(process.env).TURNSTILE_ENABLED;
+
 /** Server-side Turnstile check. Tokens are single-use and expire after 5 minutes. */
 export const verifyTurnstile = async (
   token: string,

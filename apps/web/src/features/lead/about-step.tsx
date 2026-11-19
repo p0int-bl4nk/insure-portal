@@ -1,13 +1,10 @@
 import {
   COUNTRIES,
-  Emirate,
-  EMIRATE_LABELS,
+  DATE_WINDOWS,
   Gender,
   GENDER_LABELS,
   MaritalStatus,
   MARITAL_STATUS_LABELS,
-  SalaryBand,
-  SALARY_BAND_LABELS,
 } from "@insure/shared";
 import { Controller, useFormContext } from "react-hook-form";
 
@@ -28,7 +25,6 @@ import {
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
@@ -36,92 +32,47 @@ import {
   InputGroupText,
 } from "@/components/ui/input-group";
 
-import { ChoiceGroup } from "./choice-group";
+import { ChoiceGroup, optionsFrom } from "./choice-group";
+import { DateField } from "./date-field";
 import { formatMobileInput } from "./form";
 import type { LeadFormValues } from "./form";
-
-/** Choice options from an option object, in declaration order. */
-const options = <T extends string>(
-  values: Record<string, T>,
-  labels: Record<T, string>
-) => Object.values(values).map((value) => ({ value, label: labels[value] }));
+import { TextField } from "./text-field";
 
 type Country = (typeof COUNTRIES)[number];
 
+const NAME_HINT = "As it appears on your passport or Emirates ID.";
+
 export const AboutStep = () => {
-  const {
-    register,
-    control,
-    formState: { errors },
-  } = useFormContext<LeadFormValues>();
-  const e = errors.proposer;
-  const mobileField = register("proposer.mobile");
+  const { control } = useFormContext<LeadFormValues>();
 
   return (
     <FieldGroup>
-      <div className="grid gap-5 md:grid-cols-2 md:items-start md:gap-x-4">
-        <Field data-invalid={!!e?.fullName || undefined}>
-          <FieldLabel htmlFor="fullName">Full name</FieldLabel>
-          <Input
-            id="fullName"
-            autoComplete="name"
-            className="h-10"
-            aria-invalid={!!e?.fullName || undefined}
-            {...register("proposer.fullName")}
-          />
-          <FieldError errors={[e?.fullName]} />
-        </Field>
-
-        <Field data-invalid={!!e?.mobile || undefined}>
-          <FieldLabel htmlFor="mobile">Mobile number</FieldLabel>
-          <InputGroup className="h-10">
-            <InputGroupAddon>
-              <InputGroupText>+971</InputGroupText>
-            </InputGroupAddon>
-            <InputGroupInput
-              id="mobile"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel-national"
-              placeholder="50 123 4567"
-              aria-invalid={!!e?.mobile || undefined}
-              {...mobileField}
-              onChange={(event) => {
-                event.target.value = formatMobileInput(event.target.value);
-                return mobileField.onChange(event);
-              }}
-            />
-          </InputGroup>
-          {e?.mobile ? (
-            <FieldError errors={[e.mobile]} />
-          ) : (
-            <FieldDescription>
-              UAE mobile starting with 5. We&apos;ll call or WhatsApp you with
-              quotes.
-            </FieldDescription>
-          )}
-        </Field>
+      <div className="grid gap-5 md:grid-cols-3 md:items-start md:gap-x-4">
+        <TextField
+          name="proposer.firstName"
+          label="First name"
+          autoComplete="given-name"
+          description={NAME_HINT}
+        />
+        <TextField
+          name="proposer.middleName"
+          label="Middle name"
+          optional
+          autoComplete="additional-name"
+        />
+        <TextField
+          name="proposer.lastName"
+          label="Last name"
+          autoComplete="family-name"
+        />
       </div>
 
       <div className="grid gap-5 md:grid-cols-2 md:items-start md:gap-x-4">
-        <Field data-invalid={!!e?.email || undefined}>
-          <FieldLabel htmlFor="email">
-            Email{" "}
-            <span className="text-muted-foreground font-normal">
-              (optional)
-            </span>
-          </FieldLabel>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            className="h-10"
-            aria-invalid={!!e?.email || undefined}
-            {...register("proposer.email")}
-          />
-          <FieldError errors={[e?.email]} />
-        </Field>
+        <DateField
+          name="proposer.dateOfBirth"
+          label="Date of birth"
+          window={DATE_WINDOWS.dateOfBirth}
+        />
 
         <Controller
           control={control}
@@ -129,6 +80,7 @@ export const AboutStep = () => {
           render={({ field, fieldState }) => (
             <Field data-invalid={fieldState.invalid || undefined}>
               <FieldLabel htmlFor="nationality">Nationality</FieldLabel>
+
               <Combobox<Country>
                 items={COUNTRIES}
                 value={COUNTRIES.find((c) => c.code === field.value) ?? null}
@@ -155,51 +107,12 @@ export const AboutStep = () => {
                   </ComboboxList>
                 </ComboboxContent>
               </Combobox>
+
               <FieldError errors={[fieldState.error]} />
             </Field>
           )}
         />
       </div>
-
-      <Controller
-        control={control}
-        name="proposer.emirate"
-        render={({ field, fieldState }) => (
-          <FieldSet data-invalid={fieldState.invalid || undefined}>
-            <FieldLegend id="emirate-legend" variant="label">
-              Emirate that issued your visa
-            </FieldLegend>
-            <ChoiceGroup
-              aria-labelledby="emirate-legend"
-              options={options(Emirate, EMIRATE_LABELS)}
-              value={field.value}
-              onChange={field.onChange}
-              invalid={fieldState.invalid}
-            />
-            <FieldError errors={[fieldState.error]} />
-          </FieldSet>
-        )}
-      />
-
-      <Controller
-        control={control}
-        name="proposer.salaryBand"
-        render={({ field, fieldState }) => (
-          <FieldSet data-invalid={fieldState.invalid || undefined}>
-            <FieldLegend id="salary-legend" variant="label">
-              Monthly salary
-            </FieldLegend>
-            <ChoiceGroup
-              aria-labelledby="salary-legend"
-              options={options(SalaryBand, SALARY_BAND_LABELS)}
-              value={field.value}
-              onChange={field.onChange}
-              invalid={fieldState.invalid}
-            />
-            <FieldError errors={[fieldState.error]} />
-          </FieldSet>
-        )}
-      />
 
       <div className="grid grid-cols-2 gap-3">
         <Controller
@@ -215,7 +128,7 @@ export const AboutStep = () => {
               </FieldLegend>
               <ChoiceGroup
                 aria-labelledby="gender-legend"
-                options={options(Gender, GENDER_LABELS)}
+                options={optionsFrom(Gender, GENDER_LABELS)}
                 value={field.value}
                 onChange={field.onChange}
                 invalid={fieldState.invalid}
@@ -224,6 +137,7 @@ export const AboutStep = () => {
             </FieldSet>
           )}
         />
+
         <Controller
           control={control}
           name="proposer.maritalStatus"
@@ -237,7 +151,7 @@ export const AboutStep = () => {
               </FieldLegend>
               <ChoiceGroup
                 aria-labelledby="marital-legend"
-                options={options(MaritalStatus, MARITAL_STATUS_LABELS)}
+                options={optionsFrom(MaritalStatus, MARITAL_STATUS_LABELS)}
                 value={field.value}
                 onChange={field.onChange}
                 invalid={fieldState.invalid}
@@ -245,6 +159,55 @@ export const AboutStep = () => {
               <FieldError errors={[fieldState.error]} />
             </FieldSet>
           )}
+        />
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-2 md:items-start md:gap-x-4">
+        <Controller
+          control={control}
+          name="proposer.mobile"
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid || undefined}>
+              <FieldLabel htmlFor="mobile">Mobile number</FieldLabel>
+
+              <InputGroup className="h-10">
+                <InputGroupAddon>
+                  <InputGroupText>+971</InputGroupText>
+                </InputGroupAddon>
+                <InputGroupInput
+                  id="mobile"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel-national"
+                  placeholder="50 123 4567"
+                  aria-invalid={fieldState.invalid || undefined}
+                  name={field.name}
+                  ref={field.ref}
+                  value={field.value ?? ""}
+                  onChange={(event) =>
+                    field.onChange(formatMobileInput(event.target.value))
+                  }
+                  onBlur={field.onBlur}
+                />
+              </InputGroup>
+
+              {fieldState.error ? (
+                <FieldError errors={[fieldState.error]} />
+              ) : (
+                <FieldDescription>
+                  We&apos;ll call or WhatsApp you with quotes.
+                </FieldDescription>
+              )}
+            </Field>
+          )}
+        />
+
+        <TextField
+          name="proposer.email"
+          label="Email"
+          type="email"
+          autoComplete="email"
+          placeholder="you@example.com"
         />
       </div>
     </FieldGroup>

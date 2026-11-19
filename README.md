@@ -25,10 +25,12 @@ No AWS credentials are needed locally.
 
 1. `pnpm install`
 2. Create a **dev** Google Sheet, never the production one, and a Google Cloud service account with the Sheets API enabled. Share the Sheet with the service account's `client_email` as Editor.
-3. `cp apps/api/.env.example apps/api/.env`, then fill in `SPREADSHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON`. The Turnstile test secret is already set.
-4. `cp apps/web/.env.example apps/web/.env`. It contains Turnstile's always-pass test site key.
+3. `cp apps/api/.env.example apps/api/.env`, then fill in `SPREADSHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON`.
+4. `cp apps/web/.env.example apps/web/.env`.
 5. `pnpm --filter @insure/api sheet:init` creates the `Leads` and `Members` tabs with header rows.
 6. `pnpm dev` starts the web app at http://localhost:5173 and the API at :8787. Vite proxies `/api` to the API.
+
+The Turnstile human check is **off by default**. To try it locally, set `TURNSTILE_ENABLED=true` in `apps/api/.env` and `VITE_TURNSTILE_ENABLED=true` in `apps/web/.env`; Cloudflare's always-pass test keys are already filled in.
 
 ## Scripts
 
@@ -61,21 +63,22 @@ Needs Terraform ≥ 1.17 and the AWS CLI, signed in to the target account.
      "turnstileSecretKey": "…"
    }
    ```
-5. Set the production Turnstile site key in `apps/web/.env`, then `pnpm deploy:web`.
+5. Turn Turnstile on for production: `VITE_TURNSTILE_ENABLED=true` plus the real site key in `apps/web/.env`, and `TURNSTILE_ENABLED=true` in the Lambda environment. Then `pnpm deploy:web`.
 
 Terraform state is local until the account is chosen; `infra/versions.tf` has the S3 backend block to switch to. Lambda reserved concurrency defaults to 5 (`reserved_concurrency`). Accounts with a low concurrency quota may need to raise the quota or lower this value.
 
 ## Sheet layout
 
-- **Leads**: one row per submission: `lead_id`, `reference`, `submitted_at_gst`, proposer details, `member_count`, `any_ped`, `any_smoker`, `any_pregnant`, `max_age`, `consent_version`.
+- **Leads**: one row per submission: reference and timestamp; name, date of birth, gender, marital status, nationality, mobile, email; member summary (`member_count`, `any_ped`, `any_smoker`, `any_pregnant`, `max_age`); height and weight; policy start date, previous policy expiry, income range, occupation; visa emirate, visa file number, passport number, sponsor name, Emirates ID (or e-visa UID) and expiry; `consent_version`. The column list lives in `LEAD_COLUMNS` in `apps/api/src/rows.ts`, and `sheet:init` writes the headers from it.
 - **Members**: one row per insured member, linked by `lead_id`.
 
 Both rows are written in a single atomic `batchUpdate`. Cells are written as literals, so a value like `=SUM()` can never run as a formula.
 
 ## Open items before launch
 
-- **Compliance sign-off:** PED (health) data is stored in Google Sheets, outside the UAE. See UAE Federal Law No. 2 of 2019 and the PDPL. This blocks launch.
-- Final consent wording from legal. Bump `CONSENT_VERSION` in `packages/shared/src/options.ts` when it changes.
-- Real logo (placeholder in `apps/web/src/features/lead/step-header.tsx`) and privacy-notice link.
+- **Compliance sign-off:** PED (health) data, height/weight and identity documents (Emirates ID, passport and visa numbers) are stored in Google Sheets, outside the UAE. See UAE Federal Law No. 2 of 2019 and the PDPL. This blocks launch.
+- Confirm the placeholder income ranges and occupations in `packages/shared/src/options.ts`. The first income band must stay at AED 4,000 (Essential Benefits Plan threshold).
+- Legal review of the declaration (`DECLARATION` in `packages/shared/src/options.ts`), including the "Insurance Co" placeholder. Bump `CONSENT_VERSION` whenever the text changes.
+- Real logo (placeholder in `apps/web/src/features/lead/wizard-layout.tsx`).
 - Production AWS account, domain, and Turnstile site/secret keys.
 - Data retention: rows are currently kept indefinitely (accepted risk).

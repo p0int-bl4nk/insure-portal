@@ -1,9 +1,13 @@
 import {
+  addDays,
+  addYears,
   Condition,
   Emirate,
   Gender,
+  IncomeRange,
   MaritalStatus,
-  SalaryBand,
+  Occupation,
+  todayInDubai,
 } from "@insure/shared";
 import type { LeadInput } from "@insure/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,23 +16,27 @@ import { toApiEvent } from "./event.ts";
 import { createHandler } from "./handler.ts";
 import type { Deps } from "./handler.ts";
 import type { Logger } from "./log.ts";
+import { LEAD_HEADERS } from "./rows.ts";
 
 const NOW = new Date("2026-11-18T10:05:33Z");
 const LEAD_ID = "7f3a21c9-0000-4000-8000-000000000000";
 
+// Date rules are relative to the real today, so fixtures are too.
+const today = todayInDubai();
+
 const lead: LeadInput = {
   proposer: {
-    fullName: "Rahul Menon",
-    mobile: "0501234567",
-    email: "rahul@example.com",
-    nationality: "IN",
-    emirate: Emirate.Dubai,
-    salaryBand: SalaryBand.Above4000,
+    firstName: "Rahul",
+    lastName: "Menon",
+    dateOfBirth: addYears(today, -34),
     gender: Gender.Male,
     maritalStatus: MaritalStatus.Married,
+    nationality: "IN",
+    email: "rahul@example.com",
+    mobile: "0501234567",
   },
   members: {
-    self: { age: 34, conditions: [Condition.Diabetes], smoker: false },
+    self: { conditions: [Condition.Diabetes], smoker: false },
     spouse: {
       age: 31,
       gender: Gender.Female,
@@ -38,6 +46,23 @@ const lead: LeadInput = {
     },
   },
   hasPed: true,
+  measurements: { heightCm: 175, weightKg: 72 },
+  policy: {
+    startDate: addDays(today, 7),
+    incomeRange: IncomeRange.From10001To20000,
+    occupation: Occupation.Salaried,
+    hasPreviousPolicy: false,
+  },
+  residency: {
+    emirate: Emirate.Dubai,
+    visaFileNumber: "201/2020/1234567",
+    passportNumber: "P1234567",
+    sponsorFirstName: "Acme",
+    sponsorLastName: "Trading LLC",
+    eVisaOnly: false,
+    emiratesId: "784-1990-1234567-1",
+    emiratesIdExpiry: addYears(today, 2),
+  },
   consent: true,
 };
 
@@ -71,17 +96,21 @@ describe("handler", () => {
   const logError = vi.fn<Logger["error"]>();
   let handler: ReturnType<typeof createHandler>;
 
-  beforeEach(() => {
-    vi.resetAllMocks();
-    verify.mockResolvedValue({ success: true, errorCodes: [] });
-    append.mockResolvedValue();
-    handler = createHandler({
+  const makeHandler = (turnstileEnabled: boolean) =>
+    createHandler({
+      turnstileEnabled,
       verify,
       append,
       now: () => NOW,
       newId: () => LEAD_ID,
       log: { info: logInfo, warn: logWarn, error: logError },
     });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    verify.mockResolvedValue({ success: true, errorCodes: [] });
+    append.mockResolvedValue();
+    handler = makeHandler(true);
   });
 
   it("saves a valid lead and returns its reference", async () => {
@@ -92,14 +121,7 @@ describe("handler", () => {
     });
     expect(verify).toHaveBeenCalledWith("token", "203.0.113.7");
 
-    const [leadRow, memberRows] = append.mock.calls[0] ?? [];
-    expect(leadRow?.slice(0, 5)).toStrictEqual([
-      LEAD_ID,
-      "7F3A-21C9",
-      "2026-11-18 14:05:33",
-      "Rahul Menon",
-      "+971501234567",
-    ]);
+    const [, memberRows] = append.mock.calls[0] ?? [];
     expect(memberRows).toHaveLength(2);
     expect(memberRows?.[0]).toStrictEqual([
       LEAD_ID,
@@ -111,6 +133,37 @@ describe("handler", () => {
       "No",
       "",
     ]);
+  });
+
+  it("writes one value per Sheet column, normalised", async () => {
+    await handler(event(submission()));
+
+    const [leadRow] = append.mock.calls[0] ?? [];
+    const cell = (header: (typeof LEAD_HEADERS)[number]) =>
+      leadRow?.[LEAD_HEADERS.indexOf(header)];
+
+    expect(leadRow).toHaveLength(LEAD_HEADERS.length);
+    expect(cell("submitted_at_gst")).toBe("2026-11-18 14:05:33");
+    expect(cell("mobile")).toBe("+971501234567");
+    expect(cell("emirates_id")).toBe("784199012345671");
+    expect(cell("uid_number")).toBe("");
+  });
+
+  it("skips the human check when Turnstile is switched off", async () => {
+    const res = await makeHandler(false)(
+      event(submission({ turnstileToken: undefined }))
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(verify).not.toHaveBeenCalled();
+    expect(append).toHaveBeenCalledOnce();
+  });
+
+  it("requires a token when Turnstile is on", async () => {
+    const res = await handler(event(submission({ turnstileToken: undefined })));
+
+    expect(res.statusCode).toBe(403);
+    expect(append).not.toHaveBeenCalled();
   });
 
   it("rejects non-POST requests", async () => {
@@ -175,6 +228,9 @@ describe("handler", () => {
       "501234567",
       "rahul@example.com",
       "Diabetes",
+      "P1234567",
+      "784199012345671",
+      "201/2020/1234567",
     ]) {
       expect(logged).not.toContain(secret);
     }

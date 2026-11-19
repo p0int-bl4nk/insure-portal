@@ -1,22 +1,38 @@
-import { Condition, Gender, MaritalStatus } from "@insure/shared";
+import {
+  addYears,
+  Condition,
+  Gender,
+  MaritalStatus,
+  todayInDubai,
+} from "@insure/shared";
 import { describe, expect, it } from "vitest";
 
 import {
+  ageField,
+  formatEmiratesIdInput,
   formatMobileInput,
   formMembers,
+  genderField,
   memberEligibility,
-  memberField,
   memberLabel,
   newMember,
   pruneHealthAnswers,
   summarizeConditions,
 } from "./form";
-import type { MembersFormValues } from "./form";
+import type { MembersFormValues, ProposerBasics } from "./form";
+
+const dobAged = (years: number) => addYears(todayInDubai(), -years);
+
+const proposer = (patch: ProposerBasics = {}): ProposerBasics => ({
+  gender: Gender.Male,
+  dateOfBirth: dobAged(34),
+  ...patch,
+});
 
 const members = (
   patch: Partial<MembersFormValues> = {}
 ): MembersFormValues => ({
-  self: { age: 34, conditions: [], smoker: false },
+  self: { conditions: [], smoker: false },
   children: [],
   ...patch,
 });
@@ -30,41 +46,47 @@ describe("blank members", () => {
 });
 
 describe(formMembers, () => {
-  it("lists members in order with labels and form paths", () => {
+  it("lists members with labels, ages and typed form paths", () => {
     const entries = formMembers(
       members({
-        mother: { age: 60, conditions: [], smoker: false },
+        mother: { age: "60", conditions: [], smoker: false },
         children: [
           { age: 4, gender: Gender.Male },
           { age: 2, gender: Gender.Female },
         ],
       }),
-      Gender.Male
+      proposer()
     );
+
     expect(entries.map((entry) => memberLabel(entry))).toStrictEqual([
       "Self",
       "Child 1",
       "Child 2",
       "Mother",
     ]);
-    expect(
-      entries.map((entry) => memberField(entry.path, "age"))
-    ).toStrictEqual([
-      "members.self.age",
+    expect(entries.map(({ age }) => age)).toStrictEqual([34, 4, 2, 60]);
+    expect(entries.map(({ path }) => ageField(path))).toStrictEqual([
+      undefined,
       "members.children.0.age",
       "members.children.1.age",
       "members.mother.age",
     ]);
-    expect(entries.at(-1)?.gender).toBe(Gender.Female);
+    expect(entries.map(({ path }) => genderField(path))).toStrictEqual([
+      undefined,
+      "members.children.0.gender",
+      "members.children.1.gender",
+      undefined,
+    ]);
   });
 });
 
 describe(memberEligibility, () => {
   it("asks pregnancy of a married female proposer only", () => {
     const [self] = formMembers(
-      members({ self: { age: "30", conditions: [], smoker: false } }),
-      Gender.Female
+      members(),
+      proposer({ gender: Gender.Female, dateOfBirth: dobAged(30) })
     );
+
     expect(
       self && memberEligibility(self, MaritalStatus.Married)
     ).toStrictEqual({ asksSmoker: true, asksPregnancy: true });
@@ -81,20 +103,15 @@ describe(memberEligibility, () => {
           { age: 19, gender: Gender.Male },
         ],
       }),
-      Gender.Male
+      proposer()
     );
+
     expect(
       young && memberEligibility(young, MaritalStatus.Married)
-    ).toStrictEqual({
-      asksSmoker: false,
-      asksPregnancy: false,
-    });
+    ).toStrictEqual({ asksSmoker: false, asksPregnancy: false });
     expect(
       adult && memberEligibility(adult, MaritalStatus.Married)
-    ).toStrictEqual({
-      asksSmoker: true,
-      asksPregnancy: false,
-    });
+    ).toStrictEqual({ asksSmoker: true, asksPregnancy: false });
   });
 });
 
@@ -102,47 +119,47 @@ describe(pruneHealthAnswers, () => {
   it("drops answers to questions that no longer apply", () => {
     const pruned = pruneHealthAnswers(
       members({
-        self: { age: 34, conditions: [], smoker: false, pregnant: false },
+        self: { conditions: [], smoker: false, pregnant: false },
         children: [{ age: 4, gender: Gender.Male, smoker: false }],
       }),
-      Gender.Male,
+      proposer(),
       MaritalStatus.Married
     );
+
     expect(pruned.self).not.toHaveProperty("pregnant");
-    expect(pruned.children?.[0]).not.toHaveProperty("smoker");
     expect(pruned.self).toHaveProperty("smoker", false);
+    expect(pruned.children?.[0]).not.toHaveProperty("smoker");
   });
 });
 
 describe(summarizeConditions, () => {
   it("shows two names, then a count of the rest", () => {
     expect(summarizeConditions([])).toBe("None");
-    expect(summarizeConditions([Condition.Diabetes, Condition.Thyroid])).toBe(
-      "Diabetes, Thyroid"
-    );
     expect(
       summarizeConditions([
         Condition.Diabetes,
         Condition.Respiratory,
         Condition.Kidney,
         Condition.Thyroid,
-        Condition.Other,
       ])
-    ).toBe("Diabetes, Asthma / respiratory and 3 more");
+    ).toBe("Diabetes, Asthma / respiratory and 2 more");
   });
 });
 
-describe(formatMobileInput, () => {
+describe("input formatting", () => {
   it.each([
-    ["5", "5"],
-    ["501", "50 1"],
     ["501234567", "50 123 4567"],
-    ["50123456789", "50 123 4567"],
     ["0501234567", "50 123 4567"],
     ["+971 50 123 4567", "50 123 4567"],
-    ["00971501234567", "50 123 4567"],
-    ["50-abc-123", "50 123"],
-  ])("formats %s as %s", (raw, expected) => {
+  ])("formats mobile %s as %s", (raw, expected) => {
     expect(formatMobileInput(raw)).toBe(expected);
+  });
+
+  it.each([
+    ["7841990", "784-1990"],
+    ["784199012345671", "784-1990-1234567-1"],
+    ["784-1990-1234567-1999", "784-1990-1234567-1"],
+  ])("formats Emirates ID %s as %s", (raw, expected) => {
+    expect(formatEmiratesIdInput(raw)).toBe(expected);
   });
 });

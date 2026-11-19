@@ -24,6 +24,8 @@ import {
   summarizeConditions,
 } from "./form";
 import type { LeadFormValues } from "./form";
+import { SectionHeading } from "./section-heading";
+import { TextField } from "./text-field";
 
 interface LifestyleQuestion {
   who: string;
@@ -43,16 +45,15 @@ export const HealthStep = () => {
 
   const members = useWatch({ control, name: "members" });
   const hasPed = useWatch({ control, name: "hasPed" });
-  const maritalStatus = useWatch({ control, name: "proposer.maritalStatus" });
-  const proposerGender = useWatch({ control, name: "proposer.gender" });
+  const proposer = useWatch({ control, name: "proposer" });
 
   const [open, setOpen] = useState(0);
 
-  const entries = formMembers(members, proposerGender);
+  const entries = formMembers(members, proposer);
 
   // Yes/No follow-ups, only for the members they apply to.
   const lifestyle = entries.flatMap<LifestyleQuestion>((entry) => {
-    const asks = memberEligibility(entry, maritalStatus);
+    const asks = memberEligibility(entry, proposer.maritalStatus);
     const who = memberLabel(entry);
     const pregnant = pregnancyField(entry.path);
 
@@ -73,7 +74,7 @@ export const HealthStep = () => {
   });
 
   const clearConditions = () => {
-    for (const { path } of formMembers(getValues("members"), proposerGender)) {
+    for (const { path } of formMembers(getValues("members"), proposer)) {
       setValue(memberField(path, "conditions"), [], { shouldDirty: true });
     }
   };
@@ -112,12 +113,10 @@ export const HealthStep = () => {
 
       {hasPed && (
         <section className="flex flex-col gap-2.5" aria-labelledby="who-has">
-          <h2 id="who-has" className="text-xs font-medium">
-            Who has a condition?
-          </h2>
+          <SectionHeading id="who-has">Who has a condition?</SectionHeading>
 
           {entries.map((entry, index) => {
-            const label = `${memberLabel(entry)} · ${String(entry.member.age ?? "")}`;
+            const label = `${memberLabel(entry)} · ${entry.age ?? "–"}`;
             const summary = summarizeConditions(entry.member.conditions ?? []);
             const panelId = `conditions-${entry.path.join("-")}`;
             const expanded = open === index;
@@ -205,9 +204,7 @@ export const HealthStep = () => {
             className="flex flex-col gap-3.5"
             aria-labelledby="lifestyle"
           >
-            <h2 id="lifestyle" className="text-xs font-medium">
-              Lifestyle
-            </h2>
+            <SectionHeading id="lifestyle">Lifestyle</SectionHeading>
 
             {lifestyle.map((question) => (
               <Controller
@@ -250,48 +247,26 @@ export const HealthStep = () => {
 
       <Separator />
 
-      <Controller
-        control={control}
-        name="consent"
-        render={({ field, fieldState }) => (
-          <Field
-            orientation="horizontal"
-            data-invalid={fieldState.invalid || undefined}
-            className="items-start"
-          >
-            <Checkbox
-              id="consent"
-              checked={field.value === true}
-              onCheckedChange={(checked) =>
-                field.onChange(checked ? true : undefined)
-              }
-              aria-invalid={fieldState.invalid || undefined}
-              className="mt-0.5"
-            />
+      <section className="flex flex-col gap-5" aria-labelledby="measurements">
+        <SectionHeading id="measurements">
+          Your height and weight
+        </SectionHeading>
 
-            <div className="flex flex-col gap-1.5">
-              <FieldLabel
-                htmlFor="consent"
-                className="text-[11px] leading-relaxed font-normal"
-              >
-                {/* Placeholder wording pending legal review. Bump CONSENT_VERSION when it changes. */}
-                I agree to the processing of my and my family&apos;s health
-                information to get insurance quotes, and to be contacted by
-                phone, WhatsApp or email.
-              </FieldLabel>
-
-              <a
-                href="#privacy"
-                className="text-[11px] underline underline-offset-2"
-              >
-                Privacy notice
-              </a>
-
-              <FieldError errors={[fieldState.error]} />
-            </div>
-          </Field>
-        )}
-      />
+        <div className="grid grid-cols-2 gap-3">
+          <TextField
+            name="measurements.heightCm"
+            label="Height (cm)"
+            inputMode="numeric"
+            maxLength={3}
+          />
+          <TextField
+            name="measurements.weightKg"
+            label="Weight (kg)"
+            inputMode="numeric"
+            maxLength={3}
+          />
+        </div>
+      </section>
 
       {errors.members?.message && (
         <FieldError>{errors.members.message}</FieldError>

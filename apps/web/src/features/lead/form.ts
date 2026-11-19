@@ -20,19 +20,40 @@ export type LeadFormValues = LeadInput;
 export type MembersFormValues = LeadFormValues["members"];
 export type FormMemberEntry = MemberEntry<MembersFormValues>;
 
+/** What the member list needs from the proposer: self's gender and date of birth. */
+export type ProposerBasics = Pick<
+  Partial<LeadFormValues["proposer"]>,
+  "gender" | "dateOfBirth"
+>;
+
 type ChildValues = NonNullable<MembersFormValues["children"]>[number];
 
 export const STEP_TITLES = [
   "About you",
   "Who's covered",
   "Health details",
+  "Policy & residency",
 ] as const;
 
 export const STEP_COUNT = STEP_TITLES.length;
 
 export const defaultValues: DefaultValues<LeadFormValues> = {
-  proposer: { fullName: "", mobile: "", email: "" },
-  members: { self: { age: "", conditions: [] }, children: [] },
+  proposer: {
+    firstName: "",
+    middleName: "",
+    lastName: "",
+    email: "",
+    mobile: "",
+  },
+  members: { self: { conditions: [] }, children: [] },
+  measurements: { heightCm: "", weightKg: "" },
+  residency: {
+    eVisaOnly: false,
+    visaFileNumber: "",
+    passportNumber: "",
+    sponsorFirstName: "",
+    sponsorLastName: "",
+  },
   consent: undefined,
 };
 
@@ -64,8 +85,8 @@ export const newMember = {
 /** Members in display order, from the current form values. */
 export const formMembers = (
   members: MembersFormValues | undefined,
-  proposerGender: Gender | undefined
-): FormMemberEntry[] => (members ? listMembers(members, proposerGender) : []);
+  proposer: ProposerBasics
+): FormMemberEntry[] => (members ? listMembers(members, proposer) : []);
 
 /** "Self", "Spouse", "Child 2"… */
 export const memberLabel = ({
@@ -81,7 +102,7 @@ type CommonField = keyof MembersFormValues["self"] &
   keyof NonNullable<MembersFormValues["father"]> &
   keyof ChildValues;
 
-/** Form path of a field every member has, e.g. "members.children.1.age". */
+/** Form path of a field every member has, e.g. "members.children.1.smoker". */
 export const memberField = <F extends CommonField>(
   path: MemberPath,
   field: F
@@ -89,6 +110,15 @@ export const memberField = <F extends CommonField>(
   path[0] === "children"
     ? (`members.children.${path[1]}.${field}` as const)
     : (`members.${path[0]}.${field}` as const);
+
+/** Age path for the members whose age is asked (everyone except self). */
+export const ageField = (path: MemberPath) => {
+  if (path[0] === "children") {
+    return `members.children.${path[1]}.age` as const;
+  }
+
+  return path[0] === "self" ? undefined : (`members.${path[0]}.age` as const);
+};
 
 /** Gender path for the members who are asked it (spouse, child). */
 export const genderField = (path: MemberPath) => {
@@ -112,42 +142,30 @@ export const pregnancyField = (path: MemberPath) => {
 
 // Health follow-ups
 
-const toAge = (age: unknown): number | undefined => {
-  const n = typeof age === "string" && age.trim() !== "" ? Number(age) : age;
-
-  return typeof n === "number" && Number.isFinite(n) ? n : undefined;
-};
-
 /** Which health follow-ups apply to a member, given the answers so far. */
 export const memberEligibility = (
-  entry: FormMemberEntry,
+  { relation, gender, age }: FormMemberEntry,
   maritalStatus: MaritalStatus | undefined
 ): { asksSmoker: boolean; asksPregnancy: boolean } => {
-  const age = toAge(entry.member.age);
   if (age === undefined) {
     return { asksSmoker: false, asksPregnancy: false };
   }
 
   return {
-    asksSmoker: asksSmoker(entry.relation, age),
-    asksPregnancy: asksPregnancy(
-      entry.relation,
-      entry.gender,
-      age,
-      maritalStatus
-    ),
+    asksSmoker: asksSmoker(relation, age),
+    asksPregnancy: asksPregnancy(relation, gender, age, maritalStatus),
   };
 };
 
 /** Drops answers to questions that no longer apply (e.g. after an age change). */
 export const pruneHealthAnswers = (
   members: MembersFormValues,
-  proposerGender: Gender | undefined,
+  proposer: ProposerBasics,
   maritalStatus: MaritalStatus | undefined
 ): MembersFormValues => {
   const next = structuredClone(members);
 
-  for (const entry of formMembers(next, proposerGender)) {
+  for (const entry of formMembers(next, proposer)) {
     const { member } = entry;
     const eligibility = memberEligibility(entry, maritalStatus);
 
@@ -200,4 +218,18 @@ export const formatMobileInput = (raw: string): string => {
   return [digits.slice(0, 2), digits.slice(2, 5), digits.slice(5)]
     .filter(Boolean)
     .join(" ");
+};
+
+/** Emirates ID shown as 784-YYYY-NNNNNNN-N. */
+export const formatEmiratesIdInput = (raw: string): string => {
+  const digits = raw.replaceAll(/\D/gu, "").slice(0, 15);
+
+  return [
+    digits.slice(0, 3),
+    digits.slice(3, 7),
+    digits.slice(7, 14),
+    digits.slice(14),
+  ]
+    .filter(Boolean)
+    .join("-");
 };

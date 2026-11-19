@@ -14,7 +14,7 @@ import type { Logger } from "./log.ts";
 import { leadToRows, toReference } from "./rows.ts";
 import { getSecrets } from "./secrets.ts";
 import { SheetsClient, sheetConfigFromEnv } from "./sheets.ts";
-import { verifyTurnstile } from "./turnstile.ts";
+import { turnstileEnabled, verifyTurnstile } from "./turnstile.ts";
 import type { TurnstileResult } from "./turnstile.ts";
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -23,6 +23,8 @@ const MIN_FILL_MS = 3000;
 
 /** Side effects, injected so tests can replace them. Types follow the real implementations. */
 export interface Deps {
+  /** On only when TURNSTILE_ENABLED=true; otherwise submissions skip the human check. */
+  turnstileEnabled: boolean;
   verify: (token: string, remoteIp?: string) => Promise<TurnstileResult>;
   append: SheetsClient["appendLead"];
   now: () => Date;
@@ -106,19 +108,28 @@ export const createHandler =
       return json(400, { ok: false, error: "invalid" });
     }
 
-    let verified: TurnstileResult;
-    try {
-      verified = await deps.verify(parsed.data.turnstileToken, clientIp(event));
-    } catch (error) {
-      deps.log.error("turnstile_unreachable", { message: String(error) });
-      return json(503, { ok: false, error: "unavailable" });
-    }
-    if (!verified.success) {
-      deps.log.warn("lead_rejected", {
-        reason: "turnstile",
-        codes: verified.errorCodes.join(","),
-      });
-      return json(403, { ok: false, error: "verification_failed" });
+    if (deps.turnstileEnabled) {
+      const { turnstileToken } = parsed.data;
+      if (!turnstileToken) {
+        deps.log.warn("lead_rejected", { reason: "turnstile_missing" });
+        return json(403, { ok: false, error: "verification_failed" });
+      }
+
+      let verified: TurnstileResult;
+      try {
+        verified = await deps.verify(turnstileToken, clientIp(event));
+      } catch (error) {
+        deps.log.error("turnstile_unreachable", { message: String(error) });
+        return json(503, { ok: false, error: "unavailable" });
+      }
+
+      if (!verified.success) {
+        deps.log.warn("lead_rejected", {
+          reason: "turnstile",
+          codes: verified.errorCodes.join(","),
+        });
+        return json(403, { ok: false, error: "verification_failed" });
+      }
     }
 
     const { lead } = parsed.data;
@@ -138,8 +149,13 @@ export const createHandler =
 let sheets: SheetsClient | undefined;
 
 export const handler = createHandler({
+  turnstileEnabled: turnstileEnabled(),
   verify: async (token, remoteIp) => {
     const { turnstileSecretKey } = await getSecrets();
+    if (!turnstileSecretKey) {
+      throw new Error("Turnstile is enabled but no secret key is configured");
+    }
+
     return verifyTurnstile(token, turnstileSecretKey, remoteIp);
   },
   append: async (leadRow, memberRows) => {

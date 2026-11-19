@@ -1,101 +1,147 @@
 import { z } from "zod";
 
 import { COUNTRY_CODES } from "./countries.ts";
+import { addDays, addYears, ageFromDob, todayInDubai } from "./dates.ts";
 import {
   AGE_LIMITS,
   Condition,
   Emirate,
   Gender,
+  IncomeRange,
   MaritalStatus,
   MAX_CHILDREN,
+  Occupation,
   Relation,
-  SalaryBand,
 } from "./options.ts";
 
-/** UAE mobile: optional +971 / 00971 / 971 / 0 prefix, then 5[024568] and 7 digits. */
 const UAE_MOBILE = /^(?:\+?971|00971|0)?(?<local>5[024568]\d{7})$/u;
-const NAME = /^[\p{L}\p{M}][\p{L}\p{M}' .-]*$/u;
+const EMIRATES_ID = /^784\d{12}$/u;
+const VISA_FILE_NUMBER = /^\d{3}\/\d{4}(?:\/\d)?\/\d{2,7}$/u;
+const PASSPORT_NUMBER = /^[A-Z0-9]{5,20}$/u;
+
+// Name rules as the insurer forms define them.
+const SINGLE_NAME = /^(?=.{2,40}$)[a-zA-Z]+\.?$/u;
+const MIDDLE_NAME = /^(?=.{1,100}$)[a-zA-Z]*(?:[a-zA-Z-]+\.? )*?[a-zA-Z]+\.?$/u;
+
 const ADULT_AGE = 18;
 const PREGNANCY_MAX_AGE = 55;
+
+const answerThis = "Answer this question.";
 
 export const normalizeUaeMobile = (raw: string): string | null => {
   const local = raw.replaceAll(/[\s()-]/gu, "").match(UAE_MOBILE)
     ?.groups?.local;
+
   return local ? `+971${local}` : null;
 };
 
-// Proposer (step 1)
+/** "784-1990-1234567-1" (any separators) → 15 digits, or null. */
+export const normalizeEmiratesId = (raw: string): string | null => {
+  const digits = raw.replaceAll(/\D/gu, "");
 
+  return EMIRATES_ID.test(digits) ? digits : null;
+};
+
+/** Required-text field: trimmed, with one message for blank and one for a bad format. */
+const text = (pattern: RegExp, required: string, invalid: string) =>
+  z.string(required).trim().min(1, required).regex(pattern, invalid);
+
+export type DateWindow = (today: Date) => { from: Date; to: Date };
+
+/** Allowed date ranges, relative to today in Dubai. The form's calendars use these too. */
+export const DATE_WINDOWS = {
+  dateOfBirth: (today) => ({
+    from: addDays(addYears(today, -(AGE_LIMITS.self.max + 1)), 1),
+    to: addYears(today, -AGE_LIMITS.self.min),
+  }),
+  policyStart: (today) => ({ from: today, to: addDays(today, 30) }),
+  previousPolicyExpiry: (today) => ({
+    from: addYears(today, -10),
+    to: addYears(today, 2),
+  }),
+  emiratesIdExpiry: (today) => ({ from: today, to: addDays(today, 3650) }),
+} satisfies Record<string, DateWindow>;
+
+/**
+ * A date within a window relative to today (Dubai). Accepts a Date from the form or
+ * the ISO string it becomes in JSON; a blank field gives "Enter a date."
+ */
+const dateWithin = (window: DateWindow, message: string) =>
+  z.coerce.date<Date | string | undefined>("Enter a date.").refine((date) => {
+    const { from, to } = window(todayInDubai());
+
+    return date >= from && date <= to;
+  }, message);
+
+/** Whole number from a text input; "" fails as missing rather than 0. */
+const wholeNumber = (min: number, max: number, label: string) =>
+  z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.coerce
+      .number<unknown>(`Enter ${label}.`)
+      .int("Enter a whole number.")
+      .min(min, `Enter ${label} from ${min} to ${max}.`)
+      .max(max, `Enter ${label} from ${min} to ${max}.`)
+  );
+
+// `.optional().pipe(required)`: optional in the input type so the form can start blank,
+// required in the parsed output with the message shown when it's missing.
+const choice = <T extends Record<string, string>>(values: T, message: string) =>
+  z.enum(values).optional().pipe(z.enum(values, message));
+
+const answer = z.boolean().optional().pipe(z.boolean(answerThis));
+
+// Step 1: about you.
 export const proposerSchema = z.object({
-  fullName: z
+  firstName: text(SINGLE_NAME, "Enter your first name.", "Use letters only."),
+  middleName: z
     .string()
     .trim()
-    .min(2, "Enter your full name.")
-    .max(80, "Use 80 characters or fewer.")
-    .regex(NAME, "Use letters, spaces, apostrophes, dots or hyphens only."),
-  mobile: z.string().transform((value, ctx) => {
-    const normalized = normalizeUaeMobile(value);
-    if (!normalized) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Enter a UAE mobile number starting with 5, e.g. 50 123 4567.",
-      });
-      return z.NEVER;
-    }
-    return normalized;
-  }),
-  email: z
-    .union([
-      z.literal(""),
-      z.email("Check the email address, or leave it blank.").max(254),
-    ])
+    .regex(MIDDLE_NAME, "Use letters, spaces or hyphens only.")
+    .or(z.literal(""))
     .optional()
     .transform((value) => value || undefined),
+  lastName: text(SINGLE_NAME, "Enter your last name.", "Use letters only."),
+  dateOfBirth: dateWithin(
+    DATE_WINDOWS.dateOfBirth,
+    `You need to be ${AGE_LIMITS.self.min} to ${AGE_LIMITS.self.max} years old.`
+  ),
+  gender: choice(Gender, "Choose your gender."),
+  maritalStatus: choice(MaritalStatus, "Choose your marital status."),
   nationality: z.enum(COUNTRY_CODES, "Choose your nationality."),
-  emirate: z.enum(Emirate, "Choose the emirate that issued your visa."),
-  salaryBand: z.enum(SalaryBand, "Choose your monthly salary."),
-  gender: z.enum(Gender, "Choose your gender."),
-  maritalStatus: z.enum(MaritalStatus, "Choose your marital status."),
+  email: z
+    .email("Enter a valid email address, e.g. name@example.com.")
+    .max(254),
+  mobile: z.string().transform((value, ctx) => {
+    const normalized = normalizeUaeMobile(value);
+    if (normalized) {
+      return normalized;
+    }
+
+    ctx.addIssue({
+      code: "custom",
+      message: "Enter a UAE mobile number starting with 5, e.g. 50 123 4567.",
+    });
+
+    return z.NEVER;
+  }),
 });
 
 export type Proposer = z.output<typeof proposerSchema>;
 
-// Members: the shape itself enforces one self, at most one spouse/father/mother and up to 4 children.
+// Step 2: who's covered. The shape enforces one self, at most one spouse/father/mother
+// and up to 4 children. Self's age and gender come from the proposer.
+const ageFor = (relation: Exclude<Relation, typeof Relation.Self>) =>
+  wholeNumber(AGE_LIMITS[relation].min, AGE_LIMITS[relation].max, "an age");
 
-/** Per-relation age. Form inputs give strings; "" fails as missing rather than 0. */
-const ageFor = (relation: Relation) => {
-  const { min, max } = AGE_LIMITS[relation];
-  const range = `Enter an age from ${min} to ${max}.`;
-  return z.preprocess(
-    (value) =>
-      typeof value === "string" && value.trim() === "" ? undefined : value,
-    z.coerce
-      .number<unknown>("Enter an age.")
-      .int("Enter a whole number.")
-      .min(min, range)
-      .max(max, range)
-  );
-};
-
-// `.optional().pipe(required)`: optional in the input type, so the form can hold a
-// blank member, but required in the parsed output, with the message shown when missing.
-const genderChoice = z
-  .enum(Gender)
-  .optional()
-  .pipe(z.enum(Gender, "Choose a gender."));
-const answer = z.boolean().optional().pipe(z.boolean("Answer this question."));
 const conditions = z
   .array(z.enum(Condition))
   .default([])
   .transform((list) => [...new Set(list)]);
 
-// Self's gender comes from the proposer, and father/mother have a fixed gender,
-// so only spouse and child carry one. Every relation except child is always an
-// adult, so smoker is required by the shape; pregnancy depends on gender and age
-// (checked below).
 export const membersSchema = z.object({
   self: z.object({
-    age: ageFor(Relation.Self),
     conditions,
     smoker: answer,
     pregnant: z.boolean().optional(),
@@ -103,7 +149,7 @@ export const membersSchema = z.object({
   spouse: z
     .object({
       age: ageFor(Relation.Spouse),
-      gender: genderChoice,
+      gender: choice(Gender, "Choose a gender."),
       conditions,
       smoker: answer,
       pregnant: z.boolean().optional(),
@@ -113,7 +159,7 @@ export const membersSchema = z.object({
     .array(
       z.object({
         age: ageFor(Relation.Child),
-        gender: genderChoice,
+        gender: choice(Gender, "Choose a gender."),
         conditions,
         smoker: z.boolean().optional(),
       })
@@ -131,8 +177,102 @@ export const membersSchema = z.object({
 export type Members = z.output<typeof membersSchema>;
 export type MembersInput = z.input<typeof membersSchema>;
 
-// Ordered member list shared by the form, the rules below and the Sheet rows.
+// Step 3: the proposer's height and weight (health questions live on the members).
+export const measurementsSchema = z.object({
+  heightCm: wholeNumber(50, 250, "your height in cm"),
+  weightKg: wholeNumber(10, 300, "your weight in kg"),
+});
 
+// Step 4: the policy wanted, then residency and identity documents.
+const previousPolicySchema = z.discriminatedUnion(
+  "hasPreviousPolicy",
+  [
+    z.object({
+      hasPreviousPolicy: z.literal(true),
+      previousPolicyExpiry: dateWithin(
+        DATE_WINDOWS.previousPolicyExpiry,
+        "Enter the expiry date of your current or last policy."
+      ),
+    }),
+    z.object({ hasPreviousPolicy: z.literal(false) }),
+  ],
+  answerThis
+);
+
+export const policySchema = z
+  .object({
+    startDate: dateWithin(
+      DATE_WINDOWS.policyStart,
+      "Choose a date from today up to 30 days ahead."
+    ),
+    incomeRange: choice(IncomeRange, "Choose your income range."),
+    occupation: choice(Occupation, "Choose your occupation."),
+  })
+  .and(previousPolicySchema);
+
+// "I don't have an Emirates ID, only an e-visa" decides which ID is asked.
+const identitySchema = z.discriminatedUnion(
+  "eVisaOnly",
+  [
+    z.object({
+      eVisaOnly: z.literal(false),
+      emiratesId: z.string().transform((value, ctx) => {
+        const normalized = normalizeEmiratesId(value);
+        if (normalized) {
+          return normalized;
+        }
+
+        ctx.addIssue({
+          code: "custom",
+          message: "Enter the 15-digit Emirates ID starting with 784.",
+        });
+
+        return z.NEVER;
+      }),
+      emiratesIdExpiry: dateWithin(
+        DATE_WINDOWS.emiratesIdExpiry,
+        "Enter an expiry date that hasn't passed."
+      ),
+    }),
+    z.object({
+      eVisaOnly: z.literal(true),
+      uidNumber: text(
+        /^\d{1,18}$/u,
+        "Enter your UID number.",
+        "Use digits only, up to 18."
+      ),
+    }),
+  ],
+  answerThis
+);
+
+export const residencySchema = z
+  .object({
+    emirate: choice(Emirate, "Choose the emirate that issued your visa."),
+    visaFileNumber: text(
+      VISA_FILE_NUMBER,
+      "Enter your visa file number.",
+      "Use the format 201/2020/1234567."
+    ),
+    passportNumber: z
+      .string("Enter your passport number.")
+      .trim()
+      .toUpperCase()
+      .regex(PASSPORT_NUMBER, "Use 5–20 letters and digits."),
+    sponsorFirstName: text(
+      SINGLE_NAME,
+      "Enter your sponsor's first name.",
+      "Use letters only."
+    ),
+    sponsorLastName: z
+      .string("Enter your sponsor's last name.")
+      .trim()
+      .min(1, "Enter your sponsor's last name.")
+      .max(40),
+  })
+  .and(identitySchema);
+
+// Ordered member list shared by the form, the rules below and the Sheet rows.
 type AnyMembers = Members | MembersInput;
 
 /** Any one member's value within a members object. */
@@ -152,55 +292,73 @@ export interface MemberEntry<T extends AnyMembers> {
   /** 1-based position among children; undefined for other relations. */
   childNo?: number;
   gender: Gender | undefined;
+  /** Self's age comes from the date of birth; undefined while not yet valid. */
+  age: number | undefined;
   member: MemberValue<T>;
 }
+
+const toAge = (age: unknown): number | undefined => {
+  const n = typeof age === "string" && age.trim() !== "" ? Number(age) : age;
+
+  return typeof n === "number" && Number.isInteger(n) ? n : undefined;
+};
 
 /** Members in display order: self, spouse, children, father, mother. */
 export const listMembers = <T extends AnyMembers>(
   members: T,
-  proposerGender: Gender | undefined
+  proposer: { gender?: Gender; dateOfBirth?: Date | string }
 ): MemberEntry<T>[] => {
   const entries: MemberEntry<T>[] = [
     {
       relation: Relation.Self,
       path: ["self"],
-      gender: proposerGender,
+      gender: proposer.gender,
+      age: ageFromDob(proposer.dateOfBirth),
       member: members.self,
     },
   ];
+
   if (members.spouse) {
     entries.push({
       relation: Relation.Spouse,
       path: ["spouse"],
       gender: members.spouse.gender,
+      age: toAge(members.spouse.age),
       member: members.spouse,
     });
   }
+
   for (const [i, child] of (members.children ?? []).entries()) {
     entries.push({
       relation: Relation.Child,
       path: ["children", i],
       childNo: i + 1,
       gender: child.gender,
+      age: toAge(child.age),
       member: child,
     });
   }
+
   if (members.father) {
     entries.push({
       relation: Relation.Father,
       path: ["father"],
       gender: Gender.Male,
+      age: toAge(members.father.age),
       member: members.father,
     });
   }
+
   if (members.mother) {
     entries.push({
       relation: Relation.Mother,
       path: ["mother"],
       gender: Gender.Female,
+      age: toAge(members.mother.age),
       member: members.mother,
     });
   }
+
   return entries;
 };
 
@@ -221,89 +379,110 @@ export const asksPregnancy = (
   (relation === Relation.Spouse ||
     (relation === Relation.Self && maritalStatus === MaritalStatus.Married));
 
-// Cross-field rules the shape can't express.
+// Cross-field rules the shape can't express. Each runs as soon as the sections it
+// reads are valid, so errors show on the step that caused them.
+type Section = keyof z.input<typeof leadShape>;
 
-type Ctx = z.RefinementCtx;
+const sectionsValid =
+  (...sections: Section[]) =>
+  ({ issues }: { issues: readonly { path?: PropertyKey[] }[] }) =>
+    issues.every((issue) => {
+      const [section] = issue.path ?? [];
 
-/** Spouse and children need marital status Married. */
-const checkMarriedOnly = (proposer: Proposer, members: Members, ctx: Ctx) => {
-  if (
-    proposer.maritalStatus !== MaritalStatus.Married &&
-    (members.spouse !== undefined || members.children.length > 0)
-  ) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["members"],
-      message:
-        "Spouse and children can only be added when marital status is Married.",
+      return !sections.some((name) => name === section);
     });
-  }
-};
 
-/** PED gate vs conditions, smoker for adult children, pregnancy when eligible. */
-const checkHealth = (
-  proposer: Proposer,
-  members: Members,
-  hasPed: boolean,
-  ctx: Ctx
-) => {
-  const entries = listMembers(members, proposer.gender);
-  for (const { relation, path, gender, member } of entries) {
-    const at = (field: string) => ["members", ...path, field];
-    if (!hasPed && member.conditions.length > 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: at("conditions"),
-        message: "Remove conditions, or answer Yes above.",
-      });
-    }
-    if (asksSmoker(relation, member.age) && member.smoker === undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: at("smoker"),
-        message: "Answer this question.",
-      });
-    }
-    const pregnant = "pregnant" in member ? member.pregnant : undefined;
-    if (
-      asksPregnancy(relation, gender, member.age, proposer.maritalStatus) &&
-      pregnant === undefined
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: at("pregnant"),
-        message: "Answer this question.",
-      });
-    }
-  }
-  if (hasPed && entries.every(({ member }) => member.conditions.length === 0)) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["hasPed"],
-      message: "Select at least one condition, or answer No.",
-    });
-  }
-};
+const leadShape = z.object({
+  proposer: proposerSchema,
+  members: membersSchema,
+  hasPed: z.boolean(answerThis),
+  measurements: measurementsSchema,
+  policy: policySchema,
+  residency: residencySchema,
+  consent: z.literal(true, "You need to agree to continue."),
+});
 
-// Lead and submission
+export const leadSchema = leadShape
+  .superRefine(
+    ({ proposer, members }, ctx) => {
+      const hasMarriedOnly =
+        members.spouse !== undefined || members.children.length > 0;
 
-/** The complete lead, as submitted from step 3 and re-validated by the API. */
-export const leadSchema = z
-  .object({
-    proposer: proposerSchema,
-    members: membersSchema,
-    hasPed: z.boolean("Answer this question."),
-    consent: z.literal(true, "You need to agree to continue."),
-  })
-  .superRefine(({ proposer, members, hasPed }, ctx) => {
-    checkMarriedOnly(proposer, members, ctx);
-    checkHealth(proposer, members, hasPed, ctx);
-  });
+      if (proposer.maritalStatus !== MaritalStatus.Married && hasMarriedOnly) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["members"],
+          message:
+            "Spouse and children can only be added when marital status is Married.",
+        });
+      }
+    },
+    { when: sectionsValid("proposer", "members") }
+  )
+  .superRefine(
+    ({ proposer, members, hasPed }, ctx) => {
+      const entries = listMembers(members, proposer);
+
+      for (const { relation, path, gender, age, member } of entries) {
+        const at = (field: string) => ["members", ...path, field];
+
+        if (!hasPed && member.conditions.length > 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: at("conditions"),
+            message: "Remove conditions, or answer Yes above.",
+          });
+        }
+
+        if (age === undefined) {
+          continue;
+        }
+
+        if (asksSmoker(relation, age) && member.smoker === undefined) {
+          ctx.addIssue({
+            code: "custom",
+            path: at("smoker"),
+            message: answerThis,
+          });
+        }
+
+        const pregnant = "pregnant" in member ? member.pregnant : undefined;
+        const asked = asksPregnancy(
+          relation,
+          gender,
+          age,
+          proposer.maritalStatus
+        );
+
+        if (asked && pregnant === undefined) {
+          ctx.addIssue({
+            code: "custom",
+            path: at("pregnant"),
+            message: answerThis,
+          });
+        }
+      }
+
+      const noneTicked = entries.every(
+        ({ member }) => member.conditions.length === 0
+      );
+
+      if (hasPed && noneTicked) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["hasPed"],
+          message: "Select at least one condition, or answer No.",
+        });
+      }
+    },
+    { when: sectionsValid("proposer", "members", "hasPed") }
+  );
 
 /** What the browser POSTs to /api/lead: the lead plus anti-abuse fields. */
 export const submissionSchema = z.object({
   lead: leadSchema,
-  turnstileToken: z.string().min(1).max(2048),
+  /** Absent when Turnstile is switched off in the web app; the API decides if it's required. */
+  turnstileToken: z.string().min(1).max(2048).optional(),
   /** Honeypot: hidden from people, so it must be empty. */
   website: z.string().max(0),
   /** Epoch ms when the form was first shown. */
@@ -322,5 +501,6 @@ export const submitResponseSchema = z.discriminatedUnion("ok", [
     error: z.enum(["invalid", "verification_failed", "unavailable"]),
   }),
 ]);
+
 export type SubmitResponse = z.infer<typeof submitResponseSchema>;
 export type SubmitError = Extract<SubmitResponse, { ok: false }>["error"];

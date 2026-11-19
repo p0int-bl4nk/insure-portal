@@ -16,4 +16,11 @@ export default defineConfig({
     // `Relation` type). TypeScript already rejects genuine redeclarations.
     "no-redeclare": "off",
   },
+  overrides: [
+    {
+      // The shared package's single entry point; consumers import "@insure/shared".
+      files: ["packages/shared/src/index.ts"],
+      rules: { "oxc/no-barrel-file": "off" },
+    },
+  ],
 });

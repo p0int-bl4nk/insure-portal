@@ -14,14 +14,15 @@ const serviceAccountSchema = z.object({
 /** Shape of the Secrets Manager secret (see README). */
 const appSecretsSchema = z.object({
   googleServiceAccount: serviceAccountSchema,
-  turnstileSecretKey: z.string().min(1),
+  // Only needed while TURNSTILE_ENABLED is on.
+  turnstileSecretKey: z.string().min(1).optional(),
 });
 
 /** Local development: the same values from env vars. */
 const localEnvSchema = z
   .object({
     GOOGLE_SERVICE_ACCOUNT_JSON: jsonText.pipe(serviceAccountSchema),
-    TURNSTILE_SECRET_KEY: z.string().min(1),
+    TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   })
   .transform(
     ({ GOOGLE_SERVICE_ACCOUNT_JSON, TURNSTILE_SECRET_KEY }): AppSecrets => ({
