@@ -1,5 +1,5 @@
-// Structured logging. Lambda's JSON log format turns console output into JSON with the
-// request ID attached. NEVER pass names, mobiles, emails or health data in here — only
+// Structured logging. Workers Logs stores console objects as structured JSON with the
+// request attached. NEVER pass names, mobiles, emails or health data in here — only
 // identifiers, outcomes and error codes.
 
 type Fields = Record<string, string | number | boolean | undefined>;

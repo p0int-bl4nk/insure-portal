@@ -1,6 +1,0 @@
-# Copy to terraform.tfvars (git-ignored) and fill in.
-spreadsheet_id = "<google-sheet-id>"
-
-# Optional custom domain (certificate must be in us-east-1):
-# domain_name     = "quotes.example.com"
-# certificate_arn = "arn:aws:acm:us-east-1:<account>:certificate/<id>"

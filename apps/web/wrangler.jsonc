@@ -1,0 +1,42 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Production Worker: the SPA plus the lead API. `env.dev` below is the dev Worker.
+  // The Vite plugin picks the environment at build time (CLOUDFLARE_ENV=dev vite build)
+  // and writes a flattened config to dist/, which `wrangler deploy` reads.
+  // `pnpm dev` sets CLOUDFLARE_ENV=dev. `pnpm preview` serves whichever build ran last
+  // (`build` = prod, `build:dev` = dev), so run `build:dev` before previewing locally.
+  "name": "insure-portal",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-11-19",
+  // No `directory`: the Vite plugin fills it in with its client build output.
+  "assets": {
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"],
+  },
+  "observability": { "enabled": true },
+  // Prod serves only from the production branch; no workers.dev preview URLs for versions.
+  "preview_urls": false,
+  // Not secret. GOOGLE_SERVICE_ACCOUNT_JSON, TURNSTILE_SECRET_KEY and ALERT_WEBHOOK_URL
+  // are secrets: `wrangler secret put <NAME> [--name insure-portal-dev]`, or .dev.vars locally.
+  "vars": {
+    "SPREADSHEET_ID": "REPLACE_WITH_PROD_SHEET_ID",
+    "SHEET_LEADS_TAB": "Leads",
+    "SHEET_MEMBERS_TAB": "Members",
+    "TURNSTILE_ENABLED": "true",
+  },
+  "env": {
+    "dev": {
+      "name": "insure-portal-dev",
+      // PR branches upload preview versions to the dev Worker only.
+      "preview_urls": true,
+      // `vars` isn't inherited, so every key is repeated. `observability` is inherited
+      // (https://developers.cloudflare.com/workers/wrangler/configuration/#inheritable-keys).
+      "vars": {
+        "SPREADSHEET_ID": "1xvJ77BcSc9yUkfb8eLlyMUSSrTqHSAgPQKSzJDJ9q5U",
+        "SHEET_LEADS_TAB": "Leads",
+        "SHEET_MEMBERS_TAB": "Members",
+        "TURNSTILE_ENABLED": "true",
+      },
+    },
+  },
+}

@@ -1,19 +1,15 @@
-import { randomUUID } from "node:crypto";
-
 import { submissionSchema } from "@insure/shared";
 import type { SubmitResponse } from "@insure/shared";
-import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyStructuredResultV2,
-} from "aws-lambda";
 import { z } from "zod";
 
-import { getConfig } from "./config.ts";
+import type { AlertEvent } from "./alert.ts";
+import { postAlert } from "./alert.ts";
 import type { Config } from "./config.ts";
 import { log } from "./log.ts";
 import type { Logger } from "./log.ts";
 import { leadToRows } from "./rows.ts";
-import { SheetsClient } from "./sheets.ts";
+import type { Cell } from "./rows.ts";
+import { appendLead } from "./sheets.ts";
 import { verifyTurnstile } from "./turnstile.ts";
 import type { TurnstileResult } from "./turnstile.ts";
 import { jsonText, toReference } from "./utils.ts";
@@ -28,22 +24,24 @@ export interface Deps {
   verify:
     | ((token: string, remoteIp?: string) => Promise<TurnstileResult>)
     | undefined;
-  append: SheetsClient["appendLead"];
+  append: (leadRow: Cell[], memberRows: Cell[][]) => Promise<void>;
   now: () => Date;
-  newId: typeof randomUUID;
+  newId: () => string;
   log: Logger;
+  /** Fires on a failure that loses a lead. Never throws. */
+  alert: (event: AlertEvent, leadId?: string) => void;
 }
 
 const json = (
-  statusCode: number,
+  status: number,
   body:
     | SubmitResponse
     | { ok: false; error: "method_not_allowed" | "too_large" }
-): APIGatewayProxyStructuredResultV2 => ({
-  statusCode,
-  headers: { "content-type": "application/json", "cache-control": "no-store" },
-  body: JSON.stringify(body),
-});
+): Response =>
+  Response.json(body, {
+    status,
+    headers: { "cache-control": "no-store" },
+  });
 
 const botSignal = (nowMs: number) =>
   z
@@ -67,24 +65,91 @@ const botSignal = (nowMs: number) =>
 const decoy = (deps: Deps) =>
   json(200, { ok: true, reference: toReference(deps.newId()) });
 
-const clientIp = (event: APIGatewayProxyEventV2): string | undefined =>
-  event.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-  event.requestContext.http.sourceIp;
+const clientIp = (request: Request): string | undefined =>
+  request.headers.get("cf-connecting-ip") ?? undefined;
+
+/**
+ * Reads a request body up to `maxBytes`, without ever buffering more than that.
+ * A chunked request with no Content-Length can otherwise stream up to the
+ * platform's full request-size cap before `text()` resolves, risking an
+ * out-of-memory isolate reset. Returns "too_large" (and cancels the stream)
+ * the moment the running total crosses the limit, instead of draining it.
+ */
+const readChunks = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  maxBytes: number
+): Promise<Uint8Array[] | "too_large"> => {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  // Chunks arrive in order, so each read must wait for the previous one.
+  for (;;) {
+    // oxlint-disable-next-line no-await-in-loop
+    const { done, value } = await reader.read();
+    if (done) {
+      return chunks;
+    }
+
+    total += value.byteLength;
+    if (total > maxBytes) {
+      // oxlint-disable-next-line no-await-in-loop
+      await reader.cancel();
+      return "too_large";
+    }
+
+    chunks.push(value);
+  }
+};
+
+const readBody = async (
+  request: Request,
+  maxBytes: number
+): Promise<string | "too_large"> => {
+  if (!request.body) {
+    return "";
+  }
+
+  const chunks = await readChunks(request.body.getReader(), maxBytes);
+  if (chunks === "too_large") {
+    return "too_large";
+  }
+
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+};
 
 export const createHandler =
   (deps: Deps) =>
-  async (
-    event: APIGatewayProxyEventV2
-  ): Promise<APIGatewayProxyStructuredResultV2> => {
-    if (event.requestContext.http.method !== "POST") {
+  async (request: Request): Promise<Response> => {
+    if (request.method !== "POST") {
       return json(405, { ok: false, error: "method_not_allowed" });
     }
 
-    const raw = event.isBase64Encoded
-      ? Buffer.from(event.body ?? "", "base64").toString("utf-8")
-      : (event.body ?? "");
-    if (Buffer.byteLength(raw) > MAX_BODY_BYTES) {
+    const declaredLength = Number(request.headers.get("content-length"));
+    if (
+      Number.isFinite(declaredLength) &&
+      declaredLength > 0 &&
+      declaredLength > MAX_BODY_BYTES
+    ) {
       return json(413, { ok: false, error: "too_large" });
+    }
+
+    let raw: string;
+    try {
+      const result = await readBody(request, MAX_BODY_BYTES);
+      if (result === "too_large") {
+        return json(413, { ok: false, error: "too_large" });
+      }
+      raw = result;
+    } catch {
+      deps.log.warn("lead_rejected", { reason: "body_unreadable" });
+      return json(400, { ok: false, error: "invalid" });
     }
 
     const body = jsonText.safeParse(raw);
@@ -118,9 +183,10 @@ export const createHandler =
 
       let verified: TurnstileResult;
       try {
-        verified = await deps.verify(turnstileToken, clientIp(event));
+        verified = await deps.verify(turnstileToken, clientIp(request));
       } catch (error) {
         deps.log.error("turnstile_unreachable", { message: String(error) });
+        deps.alert("turnstile_unreachable");
         return json(503, { ok: false, error: "unavailable" });
       }
 
@@ -140,6 +206,7 @@ export const createHandler =
       await deps.append(leadRow, memberRows);
     } catch (error) {
       deps.log.error("sheet_write_failed", { leadId, message: String(error) });
+      deps.alert("sheet_write_failed", leadId);
       return json(503, { ok: false, error: "unavailable" });
     }
 
@@ -148,26 +215,31 @@ export const createHandler =
   };
 
 /** Real dependencies for a loaded config. */
-const liveDeps = ({ turnstile, googleServiceAccount, sheet }: Config): Deps => {
-  const sheets = new SheetsClient(googleServiceAccount, sheet);
+export const liveDeps = (
+  config: Config,
+  waitUntil: (p: Promise<unknown>) => void
+): Deps => {
+  const { turnstile, alertWebhookUrl } = config;
 
   return {
     verify: turnstile.enabled
       ? (token, remoteIp) =>
           verifyTurnstile(token, turnstile.secretKey, remoteIp)
       : undefined,
-    append: (leadRow, memberRows) => sheets.appendLead(leadRow, memberRows),
+    append: (leadRow, memberRows) =>
+      appendLead(
+        config.googleServiceAccount,
+        config.sheet,
+        leadRow,
+        memberRows
+      ),
     now: () => new Date(),
-    newId: randomUUID,
+    newId: () => crypto.randomUUID(),
     log,
+    alert: alertWebhookUrl
+      ? (event, leadId) => waitUntil(postAlert(alertWebhookUrl, event, leadId))
+      : () => {
+          // No webhook configured: nothing to alert.
+        },
   };
-};
-
-let live: ReturnType<typeof createHandler> | undefined;
-
-/** A bad env or unreadable secret throws, so the invocation fails loudly; the next one retries. */
-export const handler = async (event: APIGatewayProxyEventV2) => {
-  live ??= createHandler(liveDeps(await getConfig()));
-
-  return live(event);
 };

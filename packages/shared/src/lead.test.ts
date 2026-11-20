@@ -14,6 +14,7 @@ import {
   normalizeEmiratesId,
   normalizeUaeMobile,
   pruneHealthAnswers,
+  submissionSchema,
 } from "./lead.ts";
 import type { LeadInput } from "./lead.ts";
 import {
@@ -288,6 +289,18 @@ describe("lead schema", () => {
       "members.self.middleName",
       "members.self.lastName",
     ]);
+  });
+
+  // The API parses untrusted JSON, so a non-object must fail validation, not throw.
+  it.each([undefined, null, "lead", 1, []])(
+    "rejects %j without throwing",
+    (input) => {
+      expect(leadSchema.safeParse(input)).toMatchObject({ success: false });
+    }
+  );
+
+  it("rejects a submission without a lead", () => {
+    expect(submissionSchema.safeParse({})).toMatchObject({ success: false });
   });
 
   describe("category", () => {

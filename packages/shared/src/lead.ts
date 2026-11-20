@@ -477,7 +477,10 @@ const sectionsValid =
     issues.every((issue) => {
       const [section] = issue.path ?? [];
 
-      return !sections.some((name) => name === section);
+      // A pathless issue means the lead itself isn't an object, so no section is.
+      return (
+        section !== undefined && !sections.some((name) => name === section)
+      );
     });
 
 const leadFields = z.object({

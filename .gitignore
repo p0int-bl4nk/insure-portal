@@ -8,11 +8,10 @@ coverage
 .DS_Store
 .idea
 .turbo
-
-# Terraform
-infra/.terraform/
-infra/.build/
-*.tfstate
-*.tfstate.*
-infra/terraform.tfvars
 crash.log
+
+# Cloudflare
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.wrangler
