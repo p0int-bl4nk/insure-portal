@@ -478,14 +478,22 @@ export const LeadWizard = () => {
               </div>
             )}
 
-            {/* Honeypot: invisible to people and skipped by keyboard and screen readers. */}
+            {/* Honeypot: invisible to people and skipped by keyboard and screen readers.
+                The name means nothing to autofill (Chrome ignores autoComplete="off", and
+                password managers fill anything that looks like "website"/"url"), and the
+                data-* attributes opt out of 1Password, LastPass, Bitwarden and Dashlane.
+                Sent to the API as `website`. */}
             <input
               ref={honeypot}
-              name="website"
+              name="hp_7f3a"
               type="text"
               tabIndex={-1}
               autoComplete="off"
               aria-hidden="true"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bwignore="true"
+              data-form-type="other"
               className="absolute -left-[9999px] size-px opacity-0"
             />
           </main>
