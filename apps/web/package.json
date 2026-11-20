@@ -4,12 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
+    "dev": "CLOUDFLARE_ENV=dev vite --host",
     "build": "tsc -b && vite build",
+    "build:dev": "CLOUDFLARE_ENV=dev vite build",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types worker/worker-configuration.d.ts --env-file .dev.vars.example",
+    "sheet:init": "node --env-file-if-exists=.dev.vars worker/scripts/init-sheet.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
@@ -27,6 +31,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "1.70.0",
     "@playwright/test": "1.65.1",
     "@tailwindcss/vite": "4.3.5",
     "@types/node": "catalog:",
@@ -37,6 +42,7 @@
     "tailwindcss": "4.3.5",
     "typescript": "catalog:",
     "vite": "8.3.8",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "wrangler": "4.165.0"
   }
 }

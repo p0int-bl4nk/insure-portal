@@ -35,6 +35,7 @@ export default defineConfig({
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !CI,
     // Set here so a local .env with Turnstile switched on can't leak into the tests.
-    env: { VITE_TURNSTILE_ENABLED: "false" },
+    // CLOUDFLARE_ENV=dev runs the Worker with env.dev vars (the dev Sheet).
+    env: { VITE_TURNSTILE_ENABLED: "false", CLOUDFLARE_ENV: "dev" },
   },
 });

@@ -1,18 +1,16 @@
 import path from "node:path";
 
+import { cloudflare } from "@cloudflare/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // cloudflare() runs worker/index.ts in workerd alongside the SPA, so /api needs no proxy.
+  plugins: [react(), tailwindcss(), cloudflare()],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
     },
-  },
-  server: {
-    // The API dev server (pnpm --filter @insure/api dev) wraps the Lambda handler.
-    proxy: { "/api": "http://localhost:8787" },
   },
 });

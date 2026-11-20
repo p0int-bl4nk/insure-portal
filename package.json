@@ -9,8 +9,7 @@
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
     "check": "ultracite check",
-    "fix": "ultracite fix",
-    "deploy:web": "bash scripts/deploy-web.sh"
+    "fix": "ultracite fix"
   },
   "devDependencies": {
     "oxfmt": "0.79.0",
