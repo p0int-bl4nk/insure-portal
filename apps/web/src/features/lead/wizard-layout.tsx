@@ -4,21 +4,22 @@ import type { ReactNode } from "react";
 
 import { STEP_TITLES } from "./form";
 
-const LogoBox = ({ className }: { className?: string }) => (
-  // Placeholder until the real logo is supplied.
-  <div
-    className={cn(
-      "flex size-7 items-center justify-center border text-[9px] font-bold",
-      className
-    )}
+/** Brand mark: a medical plus inside corner brackets. Inherits text colour. */
+const Logo = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 32 32"
+    fill="currentColor"
+    aria-hidden="true"
+    className={cn("size-7 shrink-0", className)}
   >
-    LOGO
-  </div>
+    <path d="M2 2h10v3.5H5.5V12H2zM20 2h10v10h-3.5V5.5H20zM30 20v10H20v-3.5h6.5V20zM12 30H2V20h3.5v6.5H12z" />
+    <path d="M13.5 9h5v4.5H23v5h-4.5V23h-5v-4.5H9v-5h4.5z" />
+  </svg>
 );
 
 export const BrandMark = () => (
   <div className="flex items-center gap-2">
-    <LogoBox className="border-foreground" />
+    <Logo className="text-primary" />
     <span className="text-xs font-semibold tracking-wider">HEALTH COVER</span>
   </div>
 );
@@ -33,7 +34,7 @@ const POINTS = [
 const SidePanel = ({ step }: { step: number }) => (
   <aside className="bg-primary text-primary-foreground sticky top-0 hidden h-svh flex-col justify-between gap-10 p-10 lg:flex xl:p-14">
     <div className="flex items-center gap-2">
-      <LogoBox className="border-primary-foreground" />
+      <Logo />
       <span className="text-xs font-semibold tracking-wider">HEALTH COVER</span>
     </div>
 
