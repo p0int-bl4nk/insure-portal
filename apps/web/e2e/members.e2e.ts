@@ -11,6 +11,7 @@ import {
   fillMember,
   heading,
   memberTab,
+  nextMember,
   pick,
   reachMembers,
   SELF,
@@ -159,7 +160,7 @@ test("checks ages against the member's relation", async ({ page }) => {
   await expect(page.getByText("Must be 18 to 99 years old.")).toBeVisible();
 
   await field(page, "Date of birth").fill(SELF.dateOfBirth);
-  await continueButton(page).click();
+  await nextMember(page);
   await fillMember(page, { ...CHILD, dateOfBirth: dobForAge(18) });
   await continueButton(page).click();
   await expect(page.getByText("Children must be under 18.")).toBeVisible();
@@ -252,7 +253,7 @@ test.describe("moving between tabs", () => {
   }) => {
     await reachMembers(page, "Both Self and Family", { relations: ["Spouse"] });
     await fillMember(page, { ...SELF, maritalStatus: undefined });
-    await continueButton(page).click();
+    await nextMember(page);
     await field(page, "First name").fill(SPOUSE.firstName);
 
     await backButton(page).click();

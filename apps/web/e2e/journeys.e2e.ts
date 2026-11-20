@@ -12,6 +12,7 @@ import {
   fillSponsor,
   heading,
   mockLeadApi,
+  nextMember,
   MOTHER,
   PED_QUESTION,
   pick,
@@ -114,11 +115,11 @@ test.describe("full journeys", { tag: "@journey" }, () => {
     // Self is fixed as Married because a spouse is covered, so it isn't asked.
     await fillMember(page, { ...SELF, maritalStatus: undefined });
     await expect(continueButton(page)).toHaveText("Next: Spouse");
-    await continueButton(page).click();
+    await nextMember(page);
     await fillMember(page, SPOUSE);
-    await continueButton(page).click();
+    await nextMember(page);
     await fillMember(page, CHILD);
-    await continueButton(page).click();
+    await nextMember(page);
     await fillMember(page, {
       ...CHILD,
       firstName: "Anaya",

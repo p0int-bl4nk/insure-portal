@@ -214,11 +214,21 @@ export const fillMember = async (page: Page, member: MemberData) => {
   await field(page, "Weight (kg)").fill(member.weightKg);
 };
 
+/** Continue on a member tab checks it asynchronously before opening the next. */
+export const nextMember = async (page: Page) => {
+  const selected = page.getByRole("tab", { selected: true });
+  const current = (await selected.getAttribute("id")) ?? "";
+  await continueButton(page).click();
+  await expect(selected).not.toHaveAttribute("id", current);
+};
+
 /** Fills each member tab in order and moves on, ending on the Health step. */
 export const fillMembers = async (page: Page, members: MemberData[]) => {
-  for (const member of members) {
+  for (const [index, member] of members.entries()) {
     await fillMember(page, member);
-    await continueButton(page).click();
+    await (index < members.length - 1
+      ? nextMember(page)
+      : continueButton(page).click());
   }
   await expect(heading(page)).toHaveText("Health details");
 };
