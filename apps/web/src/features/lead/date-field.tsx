@@ -67,9 +67,11 @@ export const DateField = ({
                   // other inputs, and draw the icon ourselves.
                   "relative h-10 appearance-none pr-9 text-left",
                   "[&::-webkit-date-and-time-value]:m-0 [&::-webkit-date-and-time-value]:min-h-[1.5em] [&::-webkit-date-and-time-value]:text-left",
-                  // Chrome/Edge: stretch the invisible native picker button over
-                  // the whole field, so a click anywhere opens the calendar.
-                  "[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:size-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0",
+                  // Chrome/Edge: the native picker button sits under our icon
+                  // and gets the same focus box as the dropdown's chevron.
+                  "[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:right-[5px] [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:box-border [&::-webkit-calendar-picker-indicator]:size-6 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:border [&::-webkit-calendar-picker-indicator]:border-transparent [&::-webkit-calendar-picker-indicator]:bg-none [&::-webkit-calendar-picker-indicator]:p-0",
+                  "[&::-webkit-calendar-picker-indicator:focus-visible]:border-ring [&::-webkit-calendar-picker-indicator:focus-visible]:ring-ring/50 [&::-webkit-calendar-picker-indicator:focus-visible]:ring-1",
+                  "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-1",
                   // Match other inputs' placeholder colour until a date is chosen.
                   !date && "text-muted-foreground"
                 )}
@@ -86,6 +88,7 @@ export const DateField = ({
                   field.onChange(event.target.valueAsDate ?? undefined)
                 }
                 onBlur={field.onBlur}
+                onClick={(event) => event.currentTarget.showPicker()}
               />
               {/* Firefox shows its own calendar button. */}
               <CalendarBlankIcon

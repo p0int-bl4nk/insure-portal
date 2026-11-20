@@ -293,3 +293,20 @@ test.describe("moving between tabs", () => {
     await expect(memberTab(page, "Child 1")).toHaveAccessibleName("Child 1");
   });
 });
+
+test("the date field keeps its focus ring while the calendar button has focus", async ({
+  page,
+}) => {
+  await reachMembers(page, "Self Only");
+  const dob = field(page, "Date of birth");
+  await dob.focus();
+
+  const onPickerButton = () =>
+    dob.evaluate((el) => el.matches(":focus-within") && !el.matches(":focus"));
+  for (let i = 0; i < 4 && !(await onPickerButton()); i += 1) {
+    await page.keyboard.press("Tab");
+  }
+  expect(await onPickerButton()).toBe(true);
+
+  await expect(dob).not.toHaveCSS("box-shadow", "none");
+});
