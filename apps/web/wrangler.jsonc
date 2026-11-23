@@ -23,6 +23,8 @@
     "SHEET_LEADS_TAB": "Leads",
     "SHEET_MEMBERS_TAB": "Members",
     "TURNSTILE_ENABLED": "true",
+    // Failed submissions are logged encrypted to this key; see README "Replaying failed submissions".
+    "REPLAY_PUBLIC_KEY": "{\"kty\":\"RSA\",\"n\":\"ww7BsaOCojpUlw7z1M6AhrdRo3JBU5iSshhhUB3276oWGkY5rL6hs-6ZWOenoxiMGfKouHBZNkm98vl9PSudcsp_4I3xBiSG69Df-qSCuOgJzFuFZoEVdIs2n4Hz-6aSrhwSEjbr1bQF2qkEtOQeFohzLlIT7bBTnB0u6mtp829QhoGFRfFawePt18DJ0svqHiMzKNyTvXu42lQKJVZYCa8g5QLMl3OS4_vzuDFBHQ6OVSK2DFqkjpmn-3XQO33HKCecHMb9lfhsJfVB2JqvS6xX0y-VRc5d6G6fujsynytO5c-qV4RqpsMlJJj0bSTFC6W78LLUCyzh4whbpVhQ78VAgiJROj1DbVwoKSOcsKRN_drn-FIfVmzf62BC1Iawa7LTDl3DneNpHT93bd-VdQso_rzqheJF1415C0cwOd8g4nXj_9v1GL10w6AMuF2GFtTGZMxN9wf-1LsbTC5JWYxknSplBR-rgEmmqcWwO_J-F0YgGywwFHJ5BfxEBS1Z\",\"e\":\"AQAB\"}",
   },
   "env": {
     "dev": {
@@ -36,6 +38,7 @@
         "SHEET_LEADS_TAB": "Leads",
         "SHEET_MEMBERS_TAB": "Members",
         "TURNSTILE_ENABLED": "true",
+        "REPLAY_PUBLIC_KEY": "{\"kty\":\"RSA\",\"n\":\"ww7BsaOCojpUlw7z1M6AhrdRo3JBU5iSshhhUB3276oWGkY5rL6hs-6ZWOenoxiMGfKouHBZNkm98vl9PSudcsp_4I3xBiSG69Df-qSCuOgJzFuFZoEVdIs2n4Hz-6aSrhwSEjbr1bQF2qkEtOQeFohzLlIT7bBTnB0u6mtp829QhoGFRfFawePt18DJ0svqHiMzKNyTvXu42lQKJVZYCa8g5QLMl3OS4_vzuDFBHQ6OVSK2DFqkjpmn-3XQO33HKCecHMb9lfhsJfVB2JqvS6xX0y-VRc5d6G6fujsynytO5c-qV4RqpsMlJJj0bSTFC6W78LLUCyzh4whbpVhQ78VAgiJROj1DbVwoKSOcsKRN_drn-FIfVmzf62BC1Iawa7LTDl3DneNpHT93bd-VdQso_rzqheJF1415C0cwOd8g4nXj_9v1GL10w6AMuF2GFtTGZMxN9wf-1LsbTC5JWYxknSplBR-rgEmmqcWwO_J-F0YgGywwFHJ5BfxEBS1Z\",\"e\":\"AQAB\"}",
       },
     },
   },
