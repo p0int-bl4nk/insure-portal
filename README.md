@@ -77,8 +77,7 @@ The app runs as two Cloudflare Workers, built from `apps/web/wrangler.jsonc`: th
    ```
 4. Replace `REPLACE_WITH_PROD_SHEET_ID` in `apps/web/wrangler.jsonc`'s top-level `vars.SPREADSHEET_ID` with the prod Sheet ID, then run `pnpm --filter web cf-typegen` and commit both files. Do this before any prod build or deploy.
 5. Create the Turnstile widget for the hostname `insure-portal.<sub>.workers.dev` and keep its site and secret keys. The dev Worker doesn't need one: it uses Cloudflare's always-pass test keys.
-6. Create the Google Chat space and its incoming webhook URL. On `sheet_write_failed` or `turnstile_unreachable`, the prod Worker posts the event and lead ID there. All logs go to Workers Logs.
-   Then create the replay key pair (`pnpm --filter web replay:keygen`), store the private key file somewhere safe outside the repo, and set the printed public key as `REPLAY_PUBLIC_KEY` in both `vars` blocks of `apps/web/wrangler.jsonc`. It's public, so it isn't a secret.
+6. Create the Google Chat space and its incoming webhook URL. On `sheet_write_failed` or `turnstile_unreachable`, the prod Worker posts the event and lead ID there. All logs go to Workers Logs. Then create the replay key pair (`pnpm --filter web replay:keygen`), store the private key file somewhere safe outside the repo, and set the printed public key as `REPLAY_PUBLIC_KEY` in both `vars` blocks of `apps/web/wrangler.jsonc`. It's public, so it isn't a secret.
 7. Do the first deploy, to create both Workers. Builds read `VITE_*` from `apps/web/.env`, which has Turnstile off for local work, so pass them inline:
    ```sh
    VITE_TURNSTILE_ENABLED=true VITE_TURNSTILE_SITE_KEY=<real site key> pnpm --filter web build && pnpm --filter web deploy
