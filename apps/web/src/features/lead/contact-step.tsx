@@ -1,4 +1,10 @@
-import { Category } from "@insure/shared";
+import {
+  Category,
+  INCOME_RANGE_LABELS,
+  IncomeRange,
+  Occupation,
+  OCCUPATION_LABELS,
+} from "@insure/shared";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import {
@@ -7,6 +13,8 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
 } from "@/components/ui/field";
 import {
   InputGroup,
@@ -17,6 +25,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { formatEmiratesIdInput, formatMobileInput } from "@/lib/utils";
 
+import { ChoiceGroup, optionsFrom } from "./choice-group";
 import { NationalityField } from "./combo-field";
 import { describedBy, errorId } from "./form";
 import type { LeadFormValues } from "./form";
@@ -137,6 +146,59 @@ export const ContactStep = () => {
           <SponsorFields />
         </>
       )}
+
+      <Separator />
+
+      <Controller
+        control={control}
+        name="contact.incomeRange"
+        render={({ field, fieldState }) => (
+          <FieldSet data-invalid={fieldState.invalid || undefined}>
+            <FieldLegend id="income-legend" variant="label">
+              Your monthly income
+            </FieldLegend>
+            <FieldDescription id="income-hint">
+              As the policyholder. This helps us show plans you qualify for.
+            </FieldDescription>
+            <ChoiceGroup
+              aria-labelledby="income-legend"
+              options={optionsFrom(IncomeRange, INCOME_RANGE_LABELS)}
+              columns={2}
+              value={field.value}
+              onChange={field.onChange}
+              invalid={fieldState.invalid}
+              aria-describedby={describedBy(
+                field.name,
+                fieldState.invalid,
+                "income-hint"
+              )}
+            />
+            <FieldError id={errorId(field.name)} errors={[fieldState.error]} />
+          </FieldSet>
+        )}
+      />
+
+      <Controller
+        control={control}
+        name="contact.occupation"
+        render={({ field, fieldState }) => (
+          <FieldSet data-invalid={fieldState.invalid || undefined}>
+            <FieldLegend id="occupation-legend" variant="label">
+              Your occupation
+            </FieldLegend>
+            <ChoiceGroup
+              aria-labelledby="occupation-legend"
+              options={optionsFrom(Occupation, OCCUPATION_LABELS)}
+              columns={2}
+              value={field.value}
+              onChange={field.onChange}
+              invalid={fieldState.invalid}
+              aria-describedby={describedBy(field.name, fieldState.invalid)}
+            />
+            <FieldError id={errorId(field.name)} errors={[fieldState.error]} />
+          </FieldSet>
+        )}
+      />
     </FieldGroup>
   );
 };

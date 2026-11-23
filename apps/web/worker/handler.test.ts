@@ -46,7 +46,12 @@ const person = (firstName: string, age: number) => ({
 
 const lead: LeadInput = {
   category: Category.SelfAndFamily,
-  contact: { email: "rahul@example.com", mobile: "0501234567" },
+  contact: {
+    email: "rahul@example.com",
+    mobile: "0501234567",
+    incomeRange: IncomeRange.From10001To20000,
+    occupation: Occupation.Salaried,
+  },
   members: {
     self: {
       ...person("Rahul", 34),
@@ -59,8 +64,6 @@ const lead: LeadInput = {
   hasPed: true,
   policy: {
     startDate: addDays(today, 7),
-    incomeRange: IncomeRange.From10001To20000,
-    occupation: Occupation.Salaried,
     hasPreviousPolicy: false,
   },
   consent: true,

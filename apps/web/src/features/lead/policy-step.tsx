@@ -1,11 +1,4 @@
-import {
-  DATE_WINDOWS,
-  DECLARATION,
-  INCOME_RANGE_LABELS,
-  IncomeRange,
-  Occupation,
-  OCCUPATION_LABELS,
-} from "@insure/shared";
+import { DATE_WINDOWS, DECLARATION } from "@insure/shared";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,7 +12,7 @@ import {
 } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 
-import { ChoiceGroup, optionsFrom, YesNoChoice } from "./choice-group";
+import { YesNoChoice } from "./choice-group";
 import { DateField } from "./date-field";
 import { describedBy, errorId } from "./form";
 import type { LeadFormValues } from "./form";
@@ -72,56 +65,6 @@ export const PolicyStep = () => {
             window={DATE_WINDOWS.previousPolicyExpiry}
           />
         )}
-
-        <Controller
-          control={control}
-          name="policy.incomeRange"
-          render={({ field, fieldState }) => (
-            <FieldSet data-invalid={fieldState.invalid || undefined}>
-              <FieldLegend id="income-legend" variant="label">
-                Monthly income
-              </FieldLegend>
-              <ChoiceGroup
-                aria-labelledby="income-legend"
-                options={optionsFrom(IncomeRange, INCOME_RANGE_LABELS)}
-                columns={2}
-                value={field.value}
-                onChange={field.onChange}
-                invalid={fieldState.invalid}
-                aria-describedby={describedBy(field.name, fieldState.invalid)}
-              />
-              <FieldError
-                id={errorId(field.name)}
-                errors={[fieldState.error]}
-              />
-            </FieldSet>
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="policy.occupation"
-          render={({ field, fieldState }) => (
-            <FieldSet data-invalid={fieldState.invalid || undefined}>
-              <FieldLegend id="occupation-legend" variant="label">
-                Occupation
-              </FieldLegend>
-              <ChoiceGroup
-                aria-labelledby="occupation-legend"
-                options={optionsFrom(Occupation, OCCUPATION_LABELS)}
-                columns={2}
-                value={field.value}
-                onChange={field.onChange}
-                invalid={fieldState.invalid}
-                aria-describedby={describedBy(field.name, fieldState.invalid)}
-              />
-              <FieldError
-                id={errorId(field.name)}
-                errors={[fieldState.error]}
-              />
-            </FieldSet>
-          )}
-        />
       </section>
 
       <Separator />

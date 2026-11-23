@@ -179,8 +179,12 @@ export const contactSchema = z
     email: z
       .email("Enter a valid email address, e.g. name@example.com.")
       .max(254),
+    incomeRange: choice(IncomeRange, "Choose your income range."),
+    occupation: choice(Occupation, "Choose your occupation."),
   })
-  .describe("Step 2: how to reach whoever filled in the form.");
+  .describe(
+    "Step 2: whoever filled in the form, as the policyholder: how to reach them, their income and occupation."
+  );
 
 export const sponsorSchema = z
   .object(
@@ -321,8 +325,6 @@ export const policySchema = z
       DATE_WINDOWS.policyStart,
       "Choose a date from today up to 30 days ahead."
     ),
-    incomeRange: choice(IncomeRange, "Choose your income range."),
-    occupation: choice(Occupation, "Choose your occupation."),
   })
   .and(previousPolicySchema)
   .describe("Step 5: the policy wanted.");

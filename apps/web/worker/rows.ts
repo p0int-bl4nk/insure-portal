@@ -90,8 +90,8 @@ const LEAD_COLUMNS = [
         ? formatDmy(lead.policy.previousPolicyExpiry)
         : "",
   ],
-  ["income_range", ({ lead }) => INCOME_RANGE_LABELS[lead.policy.incomeRange]],
-  ["occupation", ({ lead }) => OCCUPATION_LABELS[lead.policy.occupation]],
+  ["income_range", ({ lead }) => INCOME_RANGE_LABELS[lead.contact.incomeRange]],
+  ["occupation", ({ lead }) => OCCUPATION_LABELS[lead.contact.occupation]],
 
   ["consent_version", () => CONSENT_VERSION],
 ] as const satisfies readonly (readonly [string, (ctx: LeadContext) => Cell])[];

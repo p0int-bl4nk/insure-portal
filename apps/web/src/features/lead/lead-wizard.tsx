@@ -64,8 +64,8 @@ const STEPS = [
       "Get health insurance quotes for you and your family. Takes about 5 minutes.",
   },
   {
-    title: "How can we reach you?",
-    intro: "An advisor will contact you with quotes.",
+    title: "About you",
+    intro: "How to reach you, and a little about your work.",
   },
   {
     title: "Member details",
