@@ -485,6 +485,16 @@ const sectionsValid =
       );
     });
 
+/** No issue on `members` itself, so it's an object, though its details may be invalid. */
+const membersPresent = ({
+  issues,
+}: {
+  issues: readonly { path?: PropertyKey[] }[];
+}) =>
+  issues.every(
+    ({ path = [] }) => !(path.length === 1 && path[0] === "members")
+  );
+
 const leadFields = z.object({
   contact: contactSchema,
   members: membersSchema,
@@ -532,7 +542,10 @@ export const leadSchema = leadShape
         issue(["category"], "Choose who you're buying for again.");
       }
     },
-    { when: sectionsValid("category") }
+    {
+      when: (payload) =>
+        sectionsValid("category")(payload) && membersPresent(payload),
+    }
   )
   .superRefine(
     ({ members: { self, spouse, children } }, ctx) => {

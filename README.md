@@ -55,6 +55,8 @@ A few scripts only make sense for `apps/web` and are run with `pnpm --filter web
 | `preview` | `vite preview`, serving whichever build ran last |
 | `cf-typegen` | Regenerate `worker/worker-configuration.d.ts` from `wrangler.jsonc` |
 | `sheet:init` | Create/update the `Leads` and `Members` tabs; needs `SPREADSHEET_ID=<id>` inline |
+| `replay:keygen` | Create the key pair that failed submissions are encrypted to (see [Replaying failed submissions](#replaying-failed-submissions)) |
+| `replay` | Decrypt a logged failed submission and replay it |
 
 ## Tests
 
@@ -76,6 +78,7 @@ The app runs as two Cloudflare Workers, built from `apps/web/wrangler.jsonc`: th
 4. Replace `REPLACE_WITH_PROD_SHEET_ID` in `apps/web/wrangler.jsonc`'s top-level `vars.SPREADSHEET_ID` with the prod Sheet ID, then run `pnpm --filter web cf-typegen` and commit both files. Do this before any prod build or deploy.
 5. Create the Turnstile widget for the hostname `insure-portal.<sub>.workers.dev` and keep its site and secret keys. The dev Worker doesn't need one: it uses Cloudflare's always-pass test keys.
 6. Create the Google Chat space and its incoming webhook URL. On `sheet_write_failed` or `turnstile_unreachable`, the prod Worker posts the event and lead ID there. All logs go to Workers Logs.
+   Then create the replay key pair (`pnpm --filter web replay:keygen`), store the private key file somewhere safe outside the repo, and set the printed public key as `REPLAY_PUBLIC_KEY` in both `vars` blocks of `apps/web/wrangler.jsonc`. It's public, so it isn't a secret.
 7. Do the first deploy, to create both Workers. Builds read `VITE_*` from `apps/web/.env`, which has Turnstile off for local work, so pass them inline:
    ```sh
    VITE_TURNSTILE_ENABLED=true VITE_TURNSTILE_SITE_KEY=<real site key> pnpm --filter web build && pnpm --filter web deploy
@@ -109,6 +112,23 @@ Node and pnpm versions: Workers Builds reads `.node-version` (this repo pins Nod
 
 Secrets locally live in `apps/web/.dev.vars` (gitignored; template `apps/web/.dev.vars.example`). The Vite plugin copies `.dev.vars` into `dist/` on build for local `wrangler dev`/`preview` use — that copy is itself gitignored and is never part of what gets deployed.
 
+## Replaying failed submissions
+
+When `REPLAY_PUBLIC_KEY` is set, these log events carry a `replay` field: the failed submission, encrypted to that key (RSA-OAEP wrapping an AES-256-GCM key). Without the private key the field is unreadable, so Workers Logs still hold no readable personal data.
+
+- `sheet_write_failed` and `turnstile_unreachable`: a valid lead that was never saved. `replay` holds the exact Sheet rows.
+- `lead_rejected` with reason `invalid`: `replay` holds the request body as received, minus the Turnstile token.
+
+Copy the `replay` value from the log, then:
+
+```sh
+pnpm --filter web replay <private-key-file> '<replay value>'            # print it
+SPREADSHEET_ID=<prod-sheet-id> GOOGLE_SERVICE_ACCOUNT_JSON="$(cat prod-sa.json)" \
+  pnpm --filter web replay <private-key-file> '<replay value>' --append  # lost lead: write it to the Sheet
+```
+
+For a rejected body it prints the body and every reason it fails validation. Date rules use today's date, so a body sent near a boundary may validate differently now. The decrypted output is personal and health data: don't paste it into tickets or chats.
+
 ## Sheet layout
 
 - **Leads**: one row per submission: reference and timestamp; category (Self Only, Both Self and Family, Family without Self); contact name, mobile and email; sponsor name, nationality and Emirates ID (Family without Self only); member summary (`member_count`, `any_ped`, `any_smoker`, `any_pregnant`, `max_age`); policy start date, previous policy expiry, income range, occupation; `consent_version`. The column list lives in `LEAD_COLUMNS` in `apps/web/worker/rows.ts`.
@@ -123,7 +143,6 @@ Both rows are written in a single atomic `batchUpdate`. Cells are written as lit
 - **Compliance sign-off:** PED (health) data, height/weight and identity documents (Emirates ID, passport and visa numbers) are stored in Google Sheets, outside the UAE. See UAE Federal Law No. 2 of 2019 and the PDPL. This blocks launch.
 - Confirm the placeholder income ranges and occupations in `packages/shared/src/options.ts`. The first income band must stay at AED 4,000 (Essential Benefits Plan threshold).
 - Legal review of the declaration (`DECLARATION` in `packages/shared/src/options.ts`), including the "Insurance Co" placeholder. Bump `CONSENT_VERSION` whenever the text changes.
-- Real logo (placeholder in `apps/web/src/features/lead/wizard-layout.tsx`).
 - Data retention: rows are currently kept indefinitely (accepted risk).
 - The production Sheet ID (`wrangler.jsonc`'s `REPLACE_WITH_PROD_SHEET_ID`) and the real Turnstile site/secret keys.
 - Buy the domain; once its DNS moves to Cloudflare, add WAF managed rules and a rate-limit rule on `/api/lead`.

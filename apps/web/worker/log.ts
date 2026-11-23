@@ -1,6 +1,6 @@
 // Structured logging. Workers Logs stores console objects as structured JSON with the
 // request attached. NEVER pass names, mobiles, emails or health data in here — only
-// identifiers, outcomes and error codes.
+// identifiers, outcomes, error codes and `replay` payloads sealed by replay.ts.
 
 type Fields = Record<string, string | number | boolean | undefined>;
 

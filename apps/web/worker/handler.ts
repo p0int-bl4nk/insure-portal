@@ -7,6 +7,8 @@ import { postAlert } from "./alert.ts";
 import type { Config } from "./config.ts";
 import { log } from "./log.ts";
 import type { Logger } from "./log.ts";
+import { importReplayPublicKey, sealReplay } from "./replay.ts";
+import type { ReplayPayload } from "./replay.ts";
 import { leadToRows } from "./rows.ts";
 import type { Cell } from "./rows.ts";
 import { appendLead } from "./sheets.ts";
@@ -30,6 +32,8 @@ export interface Deps {
   log: Logger;
   /** Fires on a failure that loses a lead. Never throws. */
   alert: (event: AlertEvent, leadId?: string) => void;
+  /** Encrypts a failed submission for the logs; undefined without a key. Never throws. */
+  seal: (payload: ReplayPayload) => Promise<string | undefined>;
 }
 
 const json = (
@@ -64,6 +68,14 @@ const botSignal = (nowMs: number) =>
 /** Returned to bots so they can't tell they were filtered out. Nothing is written. */
 const decoy = (deps: Deps) =>
   json(200, { ok: true, reference: toReference(deps.newId()) });
+
+const withoutToken = (body: unknown): unknown => {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return body;
+  }
+  const { turnstileToken: _, ...rest } = body as Record<string, unknown>;
+  return rest;
+};
 
 const clientIp = (request: Request): string | undefined =>
   request.headers.get("cf-connecting-ip") ?? undefined;
@@ -170,9 +182,20 @@ export const createHandler =
         reason: "invalid",
         // Paths only, never values.
         paths: parsed.error.issues.map((i) => i.path.join(".")).join(","),
+        replay: await deps.seal({
+          kind: "body",
+          receivedAt: deps.now().toISOString(),
+          body: withoutToken(body.data),
+        }),
       });
       return json(400, { ok: false, error: "invalid" });
     }
+
+    const { lead } = parsed.data;
+    const leadId = deps.newId();
+    const { leadRow, memberRows } = leadToRows(lead, leadId, deps.now());
+    const sealRows = () =>
+      deps.seal({ kind: "rows", leadId, leadRow, memberRows });
 
     if (deps.verify) {
       const { turnstileToken } = parsed.data;
@@ -185,8 +208,12 @@ export const createHandler =
       try {
         verified = await deps.verify(turnstileToken, clientIp(request));
       } catch (error) {
-        deps.log.error("turnstile_unreachable", { message: String(error) });
-        deps.alert("turnstile_unreachable");
+        deps.log.error("turnstile_unreachable", {
+          leadId,
+          message: String(error),
+          replay: await sealRows(),
+        });
+        deps.alert("turnstile_unreachable", leadId);
         return json(503, { ok: false, error: "unavailable" });
       }
 
@@ -199,13 +226,14 @@ export const createHandler =
       }
     }
 
-    const { lead } = parsed.data;
-    const leadId = deps.newId();
-    const { leadRow, memberRows } = leadToRows(lead, leadId, deps.now());
     try {
       await deps.append(leadRow, memberRows);
     } catch (error) {
-      deps.log.error("sheet_write_failed", { leadId, message: String(error) });
+      deps.log.error("sheet_write_failed", {
+        leadId,
+        message: String(error),
+        replay: await sealRows(),
+      });
       deps.alert("sheet_write_failed", leadId);
       return json(503, { ok: false, error: "unavailable" });
     }
@@ -219,7 +247,7 @@ export const liveDeps = (
   config: Config,
   waitUntil: (p: Promise<unknown>) => void
 ): Deps => {
-  const { turnstile, alertWebhookUrl } = config;
+  const { turnstile, alertWebhookUrl, replayPublicKey } = config;
 
   return {
     verify: turnstile.enabled
@@ -241,5 +269,20 @@ export const liveDeps = (
       : () => {
           // No webhook configured: nothing to alert.
         },
+    seal: async (payload) => {
+      if (!replayPublicKey) {
+        return;
+      }
+      try {
+        return await sealReplay(
+          await importReplayPublicKey(replayPublicKey),
+          payload
+        );
+      } catch (error) {
+        log.warn("replay_seal_failed", {
+          name: error instanceof Error ? error.name : "unknown",
+        });
+      }
+    },
   };
 };

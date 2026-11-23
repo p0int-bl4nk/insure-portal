@@ -306,6 +306,15 @@ describe("lead schema", () => {
     expect(submissionSchema.safeParse({})).toMatchObject({ success: false });
   });
 
+  it.each([undefined, null, "x"])(
+    "rejects members of %j without throwing",
+    (members) => {
+      expect(
+        leadSchema.safeParse({ category: Category.SelfOnly, members })
+      ).toMatchObject({ success: false });
+    }
+  );
+
   describe("category", () => {
     it("needs at least one family member unless Self Only", () => {
       const input = familyOnlyLead();

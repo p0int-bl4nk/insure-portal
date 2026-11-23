@@ -15,8 +15,23 @@ describe(loadConfig, () => {
       sheet: { spreadsheetId: ID, leadsTab: "Leads", membersTab: "Members" },
       turnstile: { enabled: false },
       alertWebhookUrl: undefined,
+      replayPublicKey: undefined,
       googleServiceAccount: SERVICE_ACCOUNT,
     });
+  });
+
+  it("reads the replay public key", () => {
+    const jwk = { kty: "RSA", n: "abc", e: "AQAB", alg: "RSA-OAEP-256" };
+    expect(
+      loadConfig({ ...ENV, REPLAY_PUBLIC_KEY: JSON.stringify(jwk) })
+    ).toMatchObject({ replayPublicKey: { kty: "RSA", n: "abc", e: "AQAB" } });
+  });
+
+  it("refuses a private key as the replay key", () => {
+    const jwk = { kty: "RSA", n: "abc", e: "AQAB", d: "secret" };
+    expect(() =>
+      loadConfig({ ...ENV, REPLAY_PUBLIC_KEY: JSON.stringify(jwk) })
+    ).toThrow("must be the public key, not the private one");
   });
 
   it("parses TURNSTILE_ENABLED from a string", () => {

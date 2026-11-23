@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types worker/worker-configuration.d.ts --env-file .dev.vars.example",
-    "sheet:init": "node --env-file-if-exists=.dev.vars worker/scripts/init-sheet.ts"
+    "sheet:init": "node --env-file-if-exists=.dev.vars worker/scripts/init-sheet.ts",
+    "replay": "node --env-file-if-exists=.dev.vars worker/scripts/replay.ts",
+    "replay:keygen": "node worker/scripts/replay-keygen.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
