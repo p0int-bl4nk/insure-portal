@@ -23,7 +23,7 @@ type ChildValues = NonNullable<MembersFormValues["children"]>[number];
 
 export const STEP_TITLES = [
   "Who's covered",
-  "Contact details",
+  "About you",
   "Member details",
   "Health details",
   "Policy",

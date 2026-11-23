@@ -52,7 +52,12 @@ const person = (firstName: string, age: number) => ({
 
 const validLead = (): LeadInput => ({
   category: Category.SelfAndFamily,
-  contact: { email: "rahul@example.com", mobile: "50 123 4567" },
+  contact: {
+    email: "rahul@example.com",
+    mobile: "50 123 4567",
+    incomeRange: IncomeRange.From10001To20000,
+    occupation: Occupation.Salaried,
+  },
   members: {
     self: {
       ...person("Rahul", 34),
@@ -72,8 +77,6 @@ const validLead = (): LeadInput => ({
   hasPed: true,
   policy: {
     startDate: addDays(today, 7),
-    incomeRange: IncomeRange.From10001To20000,
-    occupation: Occupation.Salaried,
     hasPreviousPolicy: false,
   },
   consent: true,
@@ -302,6 +305,15 @@ describe("lead schema", () => {
   it("rejects a submission without a lead", () => {
     expect(submissionSchema.safeParse({})).toMatchObject({ success: false });
   });
+
+  it.each([undefined, null, "x"])(
+    "rejects members of %j without throwing",
+    (members) => {
+      expect(
+        leadSchema.safeParse({ category: Category.SelfOnly, members })
+      ).toMatchObject({ success: false });
+    }
+  );
 
   describe("category", () => {
     it("needs at least one family member unless Self Only", () => {

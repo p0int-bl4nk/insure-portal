@@ -179,6 +179,8 @@ export const chooseCover = async (
 export const fillContact = async (page: Page, contact = CONTACT) => {
   await field(page, "Mobile number").fill(contact.mobile);
   await field(page, "Email").fill(contact.email);
+  await pick(page, "Your monthly income", "AED 10,001 – 20,000");
+  await pick(page, "Your occupation", "Salaried");
 };
 
 export const fillSponsor = async (page: Page, sponsor = SPONSOR) => {
@@ -248,8 +250,6 @@ export const fillPolicy = async (
   if (previousPolicy) {
     await field(page, "Policy expiry date").fill(daysFromToday(20));
   }
-  await pick(page, "Monthly income", "AED 10,001 – 20,000");
-  await pick(page, "Occupation", "Salaried");
   await page.getByRole("checkbox", { name: /I have read and agree/u }).check();
 };
 

@@ -17,6 +17,7 @@ import type { Config } from "./config.ts";
 import { createHandler, liveDeps } from "./handler.ts";
 import type { Deps } from "./handler.ts";
 import type { Logger } from "./log.ts";
+import type { ReplayPublicJwk } from "./replay.ts";
 import { LEAD_HEADERS, MEMBER_HEADERS } from "./rows.ts";
 
 const NOW = new Date("2026-11-18T10:05:33Z");
@@ -46,7 +47,12 @@ const person = (firstName: string, age: number) => ({
 
 const lead: LeadInput = {
   category: Category.SelfAndFamily,
-  contact: { email: "rahul@example.com", mobile: "0501234567" },
+  contact: {
+    email: "rahul@example.com",
+    mobile: "0501234567",
+    incomeRange: IncomeRange.From10001To20000,
+    occupation: Occupation.Salaried,
+  },
   members: {
     self: {
       ...person("Rahul", 34),
@@ -59,8 +65,6 @@ const lead: LeadInput = {
   hasPed: true,
   policy: {
     startDate: addDays(today, 7),
-    incomeRange: IncomeRange.From10001To20000,
-    occupation: Occupation.Salaried,
     hasPreviousPolicy: false,
   },
   consent: true,
@@ -107,6 +111,7 @@ describe("handler", () => {
   const logWarn = vi.fn<Logger["warn"]>();
   const logError = vi.fn<Logger["error"]>();
   const alert = vi.fn<Deps["alert"]>();
+  const seal = vi.fn<Deps["seal"]>();
   let handler: ReturnType<typeof createHandler>;
 
   const makeHandler = (turnstileEnabled: boolean) =>
@@ -117,12 +122,14 @@ describe("handler", () => {
       newId: () => LEAD_ID,
       log: { info: logInfo, warn: logWarn, error: logError },
       alert,
+      seal,
     });
 
   beforeEach(() => {
     vi.resetAllMocks();
     verify.mockResolvedValue({ success: true, errorCodes: [] });
     append.mockResolvedValue();
+    seal.mockResolvedValue("v1.sealed");
     handler = makeHandler(true);
   });
 
@@ -448,7 +455,61 @@ describe("handler", () => {
   it("alerts when Turnstile is unreachable", async () => {
     verify.mockRejectedValue(new Error("network down"));
     await handler(event(submission()));
-    expect(alert).toHaveBeenCalledWith("turnstile_unreachable");
+    expect(alert).toHaveBeenCalledWith("turnstile_unreachable", LEAD_ID);
+  });
+
+  it("seals the rows of a lead that was never saved", async () => {
+    append.mockRejectedValue(new Error("Sheets API 429"));
+    await handler(event(submission()));
+    verify.mockRejectedValue(new Error("network down"));
+    await handler(event(submission()));
+
+    const [leadRow, memberRows] = append.mock.calls[0] ?? [];
+    for (const [call] of seal.mock.calls) {
+      expect(call).toStrictEqual({
+        kind: "rows",
+        leadId: LEAD_ID,
+        leadRow,
+        memberRows,
+      });
+    }
+    expect(seal).toHaveBeenCalledTimes(2);
+    expect(logError).toHaveBeenCalledWith(
+      "sheet_write_failed",
+      expect.objectContaining({ leadId: LEAD_ID, replay: "v1.sealed" })
+    );
+    expect(logError).toHaveBeenCalledWith(
+      "turnstile_unreachable",
+      expect.objectContaining({ leadId: LEAD_ID, replay: "v1.sealed" })
+    );
+  });
+
+  it("seals a rejected body without its Turnstile token", async () => {
+    const bad = submission({ lead: { ...lead, consent: false } });
+    await handler(event(bad));
+
+    const sent = JSON.stringify(bad);
+    const { turnstileToken: _, ...body } = JSON.parse(sent);
+    expect(seal).toHaveBeenCalledWith({
+      kind: "body",
+      receivedAt: NOW.toISOString(),
+      body,
+    });
+    expect(logWarn).toHaveBeenCalledWith(
+      "lead_rejected",
+      expect.objectContaining({ reason: "invalid", replay: "v1.sealed" })
+    );
+  });
+
+  it("seals nothing for saved leads, bots or failed human checks", async () => {
+    await handler(event(submission()));
+    await handler(event(submission({ website: "http://spam" })));
+    verify.mockResolvedValue({
+      success: false,
+      errorCodes: ["invalid-input-response"],
+    });
+    await handler(event(submission()));
+    expect(seal).not.toHaveBeenCalled();
   });
 
   it("does not alert on rejections", async () => {
@@ -472,9 +533,43 @@ const baseConfig: Config = {
   googleServiceAccount: { client_email: "a@b.iam", private_key: "key" },
   turnstile: { enabled: false },
   alertWebhookUrl: undefined,
+  replayPublicKey: undefined,
 };
 
 describe(liveDeps, () => {
+  it("seals nothing without a replay key", async () => {
+    const deps = liveDeps(baseConfig, vi.fn());
+    await expect(
+      deps.seal({ kind: "body", receivedAt: "", body: {} })
+    ).resolves.toBeUndefined();
+  });
+
+  it("seals with the configured replay key", async () => {
+    const { publicKey } = (await crypto.subtle.generateKey(
+      {
+        name: "RSA-OAEP",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["encrypt", "decrypt"]
+    )) as CryptoKeyPair;
+    const deps = liveDeps(
+      {
+        ...baseConfig,
+        replayPublicKey: (await crypto.subtle.exportKey(
+          "jwk",
+          publicKey
+        )) as ReplayPublicJwk,
+      },
+      vi.fn()
+    );
+    await expect(
+      deps.seal({ kind: "body", receivedAt: "", body: {} })
+    ).resolves.toMatch(/^v1\./u);
+  });
+
   it("is a no-op alert with no alertWebhookUrl configured, and never calls waitUntil", () => {
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
     const deps = liveDeps(baseConfig, waitUntil);

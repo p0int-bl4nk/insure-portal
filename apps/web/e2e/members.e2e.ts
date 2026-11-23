@@ -264,7 +264,7 @@ test.describe("moving between tabs", () => {
     await expect(field(page, "First name")).toHaveValue(SELF.firstName);
 
     await backButton(page).click();
-    await expect(heading(page)).toHaveText("How can we reach you?");
+    await expect(heading(page)).toHaveText("About you");
 
     await continueButton(page).click();
     await memberTab(page, "Spouse").click();

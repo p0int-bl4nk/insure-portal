@@ -26,8 +26,6 @@ test.describe("Policy step", () => {
     for (const message of [
       "Enter a date.",
       "Answer this question.",
-      "Choose your income range.",
-      "Choose your occupation.",
       "You need to agree to continue.",
     ]) {
       await expect(page.getByText(message)).toBeVisible();

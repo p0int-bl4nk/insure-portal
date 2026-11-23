@@ -133,7 +133,9 @@ test.describe("Cover step", () => {
 });
 
 test.describe("Contact step", () => {
-  test("requires a UAE mobile and an email", async ({ page }) => {
+  test("requires a UAE mobile, an email, income and occupation", async ({
+    page,
+  }) => {
     await start(page);
     await chooseCover(page, "Self Only");
     await continueButton(page).click();
@@ -147,12 +149,14 @@ test.describe("Contact step", () => {
     await expect(
       page.getByText("Enter a valid email address, e.g. name@example.com.")
     ).toBeVisible();
-    await expect(heading(page)).toHaveText("How can we reach you?");
+    await expect(page.getByText("Choose your income range.")).toBeVisible();
+    await expect(page.getByText("Choose your occupation.")).toBeVisible();
+    await expect(heading(page)).toHaveText("About you");
 
     await field(page, "Mobile number").fill("41234567");
     await field(page, "Email").fill("not-an-email");
     await continueButton(page).click();
-    await expect(heading(page)).toHaveText("How can we reach you?");
+    await expect(heading(page)).toHaveText("About you");
 
     await fillContact(page);
     await continueButton(page).click();
@@ -172,7 +176,7 @@ test.describe("Contact step", () => {
     await expect(field(page, "Mobile number")).toHaveAccessibleDescription(
       "Enter a UAE mobile number starting with 5, e.g. 50 123 4567."
     );
-    await expect(page.getByText("2 answers need attention.")).toBeAttached();
+    await expect(page.getByText("4 answers need attention.")).toBeAttached();
 
     await fillContact(page);
     await continueButton(page).click();

@@ -31,7 +31,7 @@ test.describe("full journeys", { tag: "@journey" }, () => {
     await chooseCover(page, "Self Only");
     await continueButton(page).click();
 
-    await expect(heading(page)).toHaveText("How can we reach you?");
+    await expect(heading(page)).toHaveText("About you");
     await fillContact(page);
     await continueButton(page).click();
 
@@ -66,14 +66,15 @@ test.describe("full journeys", { tag: "@journey" }, () => {
     expect(startedAt).toBeGreaterThan(0);
     expect(lead).toMatchObject({
       category: "self_only",
-      contact: { mobile: "+971501234567", email: "arjun@example.com" },
-      hasPed: false,
-      consent: true,
-      policy: {
-        hasPreviousPolicy: false,
+      contact: {
+        mobile: "+971501234567",
+        email: "arjun@example.com",
         incomeRange: "10001_20000",
         occupation: "salaried",
       },
+      hasPed: false,
+      consent: true,
+      policy: { hasPreviousPolicy: false },
       members: {
         children: [],
         self: {

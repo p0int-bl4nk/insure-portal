@@ -179,8 +179,12 @@ export const contactSchema = z
     email: z
       .email("Enter a valid email address, e.g. name@example.com.")
       .max(254),
+    incomeRange: choice(IncomeRange, "Choose your income range."),
+    occupation: choice(Occupation, "Choose your occupation."),
   })
-  .describe("Step 2: how to reach whoever filled in the form.");
+  .describe(
+    "Step 2: whoever filled in the form, as the policyholder: how to reach them, their income and occupation."
+  );
 
 export const sponsorSchema = z
   .object(
@@ -321,8 +325,6 @@ export const policySchema = z
       DATE_WINDOWS.policyStart,
       "Choose a date from today up to 30 days ahead."
     ),
-    incomeRange: choice(IncomeRange, "Choose your income range."),
-    occupation: choice(Occupation, "Choose your occupation."),
   })
   .and(previousPolicySchema)
   .describe("Step 5: the policy wanted.");
@@ -483,6 +485,16 @@ const sectionsValid =
       );
     });
 
+/** No issue on `members` itself, so it's an object, though its details may be invalid. */
+const membersPresent = ({
+  issues,
+}: {
+  issues: readonly { path?: PropertyKey[] }[];
+}) =>
+  issues.every(
+    ({ path = [] }) => !(path.length === 1 && path[0] === "members")
+  );
+
 const leadFields = z.object({
   contact: contactSchema,
   members: membersSchema,
@@ -530,7 +542,10 @@ export const leadSchema = leadShape
         issue(["category"], "Choose who you're buying for again.");
       }
     },
-    { when: sectionsValid("category") }
+    {
+      when: (payload) =>
+        sectionsValid("category")(payload) && membersPresent(payload),
+    }
   )
   .superRefine(
     ({ members: { self, spouse, children } }, ctx) => {

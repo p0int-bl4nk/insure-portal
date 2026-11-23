@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { ReplayPublicJwk } from "./replay.ts";
 import { jsonText } from "./utils.ts";
 
 const SHEET_ID = /^[\w-]{20,}$/u;
@@ -34,6 +35,23 @@ const alertWebhookUrlSchema = z
     );
   }, "ALERT_WEBHOOK_URL must be an https:// URL on chat.googleapis.com")
   .describe("A Google Chat incoming-webhook URL.");
+
+/** An RSA-OAEP public key, as JWK, that failed submissions are encrypted to. */
+const replayPublicKeySchema = jsonText
+  .pipe(
+    z.looseObject({
+      kty: z.literal("RSA", "REPLAY_PUBLIC_KEY must be an RSA public JWK"),
+      n: z.string().min(1),
+      e: z.string().min(1),
+      d: z
+        .undefined(
+          "REPLAY_PUBLIC_KEY must be the public key, not the private one"
+        )
+        .optional(),
+    })
+  )
+  .transform(({ kty, n, e }): ReplayPublicJwk => ({ kty, n, e }))
+  .describe("Printed by `pnpm --filter web replay:keygen`.");
 
 /**
  * The Worker's env: string vars plus binding objects (ASSETS, KV, …). Only the keys
@@ -77,6 +95,7 @@ const envSchema = z
       .optional()
       .describe("Only needed while TURNSTILE_ENABLED is on."),
     ALERT_WEBHOOK_URL: alertWebhookUrlSchema.optional(),
+    REPLAY_PUBLIC_KEY: replayPublicKeySchema.optional(),
   })
   .transform((env): Config => ({
     sheet: {
@@ -94,6 +113,7 @@ const envSchema = z
       "Turnstile config"
     ),
     alertWebhookUrl: env.ALERT_WEBHOOK_URL,
+    replayPublicKey: env.REPLAY_PUBLIC_KEY,
   }))
   .describe("The Worker's env vars, narrowed to a validated Config.");
 
@@ -110,6 +130,7 @@ export interface Config {
   googleServiceAccount: ServiceAccount;
   turnstile: z.output<typeof turnstileSchema>;
   alertWebhookUrl: string | undefined;
+  replayPublicKey: ReplayPublicJwk | undefined;
 }
 
 /** The full config, read straight from the Worker's env. No secrets fetch, no async. */
