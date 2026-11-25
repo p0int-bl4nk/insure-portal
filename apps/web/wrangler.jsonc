@@ -14,12 +14,15 @@
     "run_worker_first": ["/api/*"],
   },
   "observability": { "enabled": true },
+  // Prod serves only pb-alumni.com, whose DNS is on Cloudflare; no workers.dev URL.
+  "routes": [{ "pattern": "pb-alumni.com", "custom_domain": true }],
+  "workers_dev": false,
   // Prod serves only from the production branch; no workers.dev preview URLs for versions.
   "preview_urls": false,
   // Not secret. GOOGLE_SERVICE_ACCOUNT_JSON, TURNSTILE_SECRET_KEY and ALERT_WEBHOOK_URL
   // are secrets: `wrangler secret put <NAME> [--name insure-portal-dev]`, or .dev.vars locally.
   "vars": {
-    "SPREADSHEET_ID": "REPLACE_WITH_PROD_SHEET_ID",
+    "SPREADSHEET_ID": "1m6E4OWv-WCCDlQn_YBWSD74ojydPpqxGw11zqvwVzLo",
     "SHEET_LEADS_TAB": "Leads",
     "SHEET_MEMBERS_TAB": "Members",
     "TURNSTILE_ENABLED": "true",
@@ -29,6 +32,9 @@
   "env": {
     "dev": {
       "name": "insure-portal-dev",
+      // `routes` and `workers_dev` are inherited, so dev overrides them to stay on workers.dev.
+      "routes": [],
+      "workers_dev": true,
       // PR branches upload preview versions to the dev Worker only.
       "preview_urls": true,
       // `vars` isn't inherited, so every key is repeated. `observability` is inherited
